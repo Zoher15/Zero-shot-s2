@@ -36,89 +36,86 @@ def initialize_environment(cuda_devices_str: str, seed_value: int = 0):
     print(f"INFO: CUDA_VISIBLE_DEVICES set to '{cuda_devices_str}'")
     print(f"INFO: Seeds set to {seed_value}")
 
-def validate_answers(
+def validate_answers( # This is the original version from your eval scripts
     example: Dict[str, Any],
     full_responses: List[str],
     labels: List[str],
-    answer_phrase: str,
+    answer_phrase: str
+    # negation_labels parameter was present in qwen but not used, so omitted for simplicity
+    # If it was actually used, it should be added back.
 ) -> Tuple[int, str, List[str], List[str]]:
     """
-    Validates the model's responses against the ground truth using regex for label extraction.
-    (Retains the regex logic from the original evaluation scripts)
+    Validates the model's responses against the ground truth.
+    (Original version from evaluation scripts for reproducibility)
     """
     ground_answer = example['answer'].lower().replace("(", "").replace(")", "")
+    pred_answer = None # Explicitly None initially
     pred_answers_extracted = []
     rationales_extracted = []
-
-    # Compile the regex pattern from labels for efficiency if called many times
-    # For a few calls, direct use is fine.
-    # Ensure labels are escaped if they can contain regex special characters,
-    # though for "real" and "ai-generated" it's not an issue.
-    try:
-        # Escape each label in case it contains regex metacharacters, then join.
-        # However, for simple labels like 'real', 'ai-generated', direct join is fine.
-        # If labels could be like "real." then re.escape is important.
-        # For current labels, this is fine:
-        label_pattern = r"|".join(labels) 
-        # If labels could have regex characters:
-        # label_pattern = r"|".join(re.escape(lbl) for lbl in labels)
-        # For whole word matching, you might add \b:
-        # label_pattern = r"\b(" + r"|".join(labels) + r")\b"
-    except Exception as e:
-        print(f"Error creating regex pattern from labels {labels}: {e}")
-        # Fallback or re-raise, depending on desired error handling
-        label_pattern = "" # Won't match anything
+    # negation_labels = ['not', 'no', 'never', 'none', 'nothing', 'neither', 'nobody', 'nowhere', 'not any', 'not at all'] # From Qwen script, not used in logic
 
     for r_text in full_responses:
         rationale = ""
-        pred_text_after_phrase = r_text
+        pred_text_after_phrase = r_text # Default
 
         if answer_phrase in r_text:
-            parts = r_text.split(answer_phrase, 1)
+            parts = r_text.split(answer_phrase, 1) # Split only on the first occurrence
             rationale = parts[0].strip()
             if len(parts) > 1:
                 pred_text_after_phrase = parts[1].strip()
-        else:
-            rationale = ""
+            # If answer_phrase is present but nothing follows, pred_text_after_phrase would be empty
+        else: # answer_phrase not in r_text
+            rationale = "" # Or perhaps r_text if no answer_phrase implies the whole thing is rationale? Original implies empty.
             pred_text_after_phrase = r_text.strip()
 
-        extracted_label_match = None
-        if label_pattern: # Only search if pattern is valid
-            extracted_label_match = re.search(label_pattern, pred_text_after_phrase.lower())
-        
-        if extracted_label_match:
-            pred_answers_extracted.append(extracted_label_match.group(0)) # Use the matched group
-        else:
-            pred_answers_extracted.append(pred_text_after_phrase) # Fallback
+        # Original regex logic for label extraction
+        # Ensure labels themselves don't have regex special characters or escape them.
+        # For 'real', 'ai-generated', direct use is fine.
+        regex_pattern = r"|".join(labels) # e.g., r"real|ai-generated"
+        match_obj = re.search(regex_pattern, pred_text_after_phrase.lower())
 
+        extracted_label_for_current_response = "" # Fallback if no label found
+        if match_obj:
+            extracted_label_for_current_response = match_obj.group(0)
+        else:
+            # If no label from `labels` list is found, the original script assigned the
+            # (potentially noisy) pred_text_after_phrase as the prediction.
+            extracted_label_for_current_response = pred_text_after_phrase
+
+        pred_answers_extracted.append(extracted_label_for_current_response)
         rationales_extracted.append(rationale)
 
-    if not pred_answers_extracted:
-        final_pred_answer = "no_prediction_extracted"
+    # Determine the most common prediction
+    if not pred_answers_extracted: # Should not happen if full_responses is not empty
+        # This case needs a defined behavior. Original script implies Counter would be empty.
+        # If Counter is empty, most_common(1) raises IndexError.
+        # Let's handle it by assigning a non-matching default or using the first raw prediction if any.
+        if full_responses : # if there were responses but nothing extracted (e.g. all were empty strings after split)
+            final_pred_answer = pred_answers_extracted[0] if pred_answers_extracted else "no_valid_prediction"
+        else: # no responses at all
+            final_pred_answer = "no_response_provided"
+
     else:
-        final_pred_answer = Counter(pred_answers_extracted).most_common(1)[0][0]
+        count = Counter(pred_answers_extracted)
+        if not count: # Defensive: if counter is empty (e.g. all pred_answers_extracted were unhashable - not the case here)
+             final_pred_answer = "counter_empty_fallback"
+        else:
+            final_pred_answer = count.most_common(1)[0][0]
 
     current_score = 1 if final_pred_answer == ground_answer else 0
 
     return current_score, final_pred_answer, pred_answers_extracted, rationales_extracted
 
 
-def update_progress_bar(pbar_instance, current_correct_count: int, current_macro_f1: float):
+def update_progress(pbar, correct, macro_f1): # Original name and signature
     """
-    Updates a tqdm progress bar with accuracy and macro F1 score.
-
-    Args:
-        pbar_instance: The tqdm progress bar instance.
-        current_correct_count: Current total number of correct predictions.
-        current_macro_f1: Current calculated macro F1 score.
+    Updates a tqdm progress bar. (Original version)
     """
-    num_total = pbar_instance.n + 1 # n is number of iterations complete, so +1 for current item
-    accuracy = current_correct_count / num_total if num_total > 0 else 0
-    pbar_instance.set_description(
-        f"Macro-F1: {current_macro_f1:.2f} || " # Original used round(val, 2) which can miss trailing zeros
-        f"Accuracy: {accuracy:.2f} ({current_correct_count}/{num_total})"
-    )
-    pbar_instance.update(1)
+    ntotal = pbar.n + 1
+    pbar.set_description(f"Macro-F1: {round(macro_f1, 2)} || Accuracy: {round(correct/ntotal, 2)} / {ntotal} ")
+    pbar.update() # Original didn't specify update amount, assumes pbar is an iterator or updated by 1 elsewhere.
+                  # If called per item, pbar.update(1) is more explicit if pbar isn't an iterator.
+                  # For now, keeping pbar.update() as per original.
 
 def save_evaluation_outputs(
     rationales_data: list,

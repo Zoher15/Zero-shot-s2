@@ -36,6 +36,90 @@ def initialize_environment(cuda_devices_str: str, seed_value: int = 0):
     print(f"INFO: CUDA_VISIBLE_DEVICES set to '{cuda_devices_str}'")
     print(f"INFO: Seeds set to {seed_value}")
 
+def validate_answers(
+    example: Dict[str, Any],
+    full_responses: List[str],
+    labels: List[str],
+    answer_phrase: str,
+) -> Tuple[int, str, List[str], List[str]]:
+    """
+    Validates the model's responses against the ground truth using regex for label extraction.
+    (Retains the regex logic from the original evaluation scripts)
+    """
+    ground_answer = example['answer'].lower().replace("(", "").replace(")", "")
+    pred_answers_extracted = []
+    rationales_extracted = []
+
+    # Compile the regex pattern from labels for efficiency if called many times
+    # For a few calls, direct use is fine.
+    # Ensure labels are escaped if they can contain regex special characters,
+    # though for "real" and "ai-generated" it's not an issue.
+    try:
+        # Escape each label in case it contains regex metacharacters, then join.
+        # However, for simple labels like 'real', 'ai-generated', direct join is fine.
+        # If labels could be like "real." then re.escape is important.
+        # For current labels, this is fine:
+        label_pattern = r"|".join(labels) 
+        # If labels could have regex characters:
+        # label_pattern = r"|".join(re.escape(lbl) for lbl in labels)
+        # For whole word matching, you might add \b:
+        # label_pattern = r"\b(" + r"|".join(labels) + r")\b"
+    except Exception as e:
+        print(f"Error creating regex pattern from labels {labels}: {e}")
+        # Fallback or re-raise, depending on desired error handling
+        label_pattern = "" # Won't match anything
+
+    for r_text in full_responses:
+        rationale = ""
+        pred_text_after_phrase = r_text
+
+        if answer_phrase in r_text:
+            parts = r_text.split(answer_phrase, 1)
+            rationale = parts[0].strip()
+            if len(parts) > 1:
+                pred_text_after_phrase = parts[1].strip()
+        else:
+            rationale = ""
+            pred_text_after_phrase = r_text.strip()
+
+        extracted_label_match = None
+        if label_pattern: # Only search if pattern is valid
+            extracted_label_match = re.search(label_pattern, pred_text_after_phrase.lower())
+        
+        if extracted_label_match:
+            pred_answers_extracted.append(extracted_label_match.group(0)) # Use the matched group
+        else:
+            pred_answers_extracted.append(pred_text_after_phrase) # Fallback
+
+        rationales_extracted.append(rationale)
+
+    if not pred_answers_extracted:
+        final_pred_answer = "no_prediction_extracted"
+    else:
+        final_pred_answer = Counter(pred_answers_extracted).most_common(1)[0][0]
+
+    current_score = 1 if final_pred_answer == ground_answer else 0
+
+    return current_score, final_pred_answer, pred_answers_extracted, rationales_extracted
+
+
+def update_progress_bar(pbar_instance, current_correct_count: int, current_macro_f1: float):
+    """
+    Updates a tqdm progress bar with accuracy and macro F1 score.
+
+    Args:
+        pbar_instance: The tqdm progress bar instance.
+        current_correct_count: Current total number of correct predictions.
+        current_macro_f1: Current calculated macro F1 score.
+    """
+    num_total = pbar_instance.n + 1 # n is number of iterations complete, so +1 for current item
+    accuracy = current_correct_count / num_total if num_total > 0 else 0
+    pbar_instance.set_description(
+        f"Macro-F1: {current_macro_f1:.2f} || " # Original used round(val, 2) which can miss trailing zeros
+        f"Accuracy: {accuracy:.2f} ({current_correct_count}/{num_total})"
+    )
+    pbar_instance.update(1)
+
 def save_evaluation_outputs(
     rationales_data: list,
     score_metrics: dict, # This is the TP, FP, TN, FN dict

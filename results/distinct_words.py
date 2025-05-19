@@ -1,710 +1,604 @@
-# Import necessary libraries
 import os
+import sys
+from pathlib import Path
+import logging
 import json
 import re
 import math
-import string # For punctuation removal
+import string
 from collections import Counter, defaultdict
-import pickle # For saving/loading processed data
-import colorsys # For color manipulation (HSL)
-from pathlib import Path # <--- ADD if not already there (it is used by config.py)
-import sys # <--- ADD
+import pickle
+import colorsys
 
-# Assuming config.py is in the project root (parent of 'results')
-project_root = Path(__file__).resolve().parent.parent
-sys.path.append(str(project_root))
-import config # <--- ADD
-
-# NLTK setup for text processing
-import nltk
-# --- (Include the corrected NLTK resource checking blocks here) ---
-print("--- Checking NLTK Resources ---")
-# Define a helper function to check and download NLTK data
-def check_nltk_resource(resource_id, download_name=None):
-    if download_name is None:
-        download_name = resource_id.split('/')[-1] # Use last part of path if no specific name
-    try:
-        # Use find for corpora/tokenizers, specific check for punkt_tab
-        if resource_id.startswith('corpora/') or resource_id.startswith('tokenizers/'):
-            nltk.data.find(resource_id)
-        elif resource_id == 'punkt_tab/english.pickle':
-            nltk.data.find('tokenizers/punkt_tab/english.pickle') # Check specific file
-        else:
-            nltk.data.find(resource_id) # Default find for others like wordnet
-        print(f"NLTK resource '{download_name}' found.")
-    except LookupError:
-        print(f"NLTK resource '{download_name}' not found. Downloading...")
-        # Use the download_name for nltk.download
-        nltk.download(download_name, quiet=True)
-        print(f"Downloaded '{download_name}'.")
-    except Exception as e:
-        print(f"An error occurred checking/downloading {download_name}: {e}")
-
-# Check required NLTK resources
-check_nltk_resource('corpora/wordnet', 'wordnet')
-check_nltk_resource('corpora/stopwords', 'stopwords')
-check_nltk_resource('tokenizers/punkt', 'punkt')
-check_nltk_resource('punkt_tab/english.pickle', 'punkt_tab') # Check specific pickle file
-
-print("--- NLTK Resource Check Complete ---")
-
-
-from nltk.corpus import stopwords
-from nltk import word_tokenize
+import nltk # Keep for WordNetLemmatizer, word_tokenize
 from nltk.stem import WordNetLemmatizer
+# stopwords will be accessed via helpers.preprocess_text_to_token_set
 
-# Initialize global lemmatizer
-lemmatizer = WordNetLemmatizer()
-
-
-# WordCloud and plotting libraries
 import matplotlib.pyplot as plt
-# Explicitly set a backend that works well in various environments
-try:
-    plt.switch_backend('Agg')
-    print("Using Matplotlib backend: Agg")
-except ImportError:
-    print("Agg backend not available, using default.")
-
-
 from wordcloud import WordCloud
 from tqdm.auto import tqdm # For progress bars
-import numpy as np # For score normalization
+import numpy as np
 
-# --- Configuration ---
+# --- Project Setup ---
+project_root = Path(__file__).resolve().parent.parent
+if str(project_root) not in sys.path:
+    sys.path.append(str(project_root))
 
-# Data Paths
-# Data Paths
-RESPONSES_DIR = config.RESPONSES_DIR # <--- Primary responses directory from config
+import config
+from utils import helpers # Import your helpers module
 
-# Update paths for processed data to use config.py variables
-PROCESSED_AGGREGATE_DATA_PATH = config.PROCESSED_AGGREGATE_DATA_PKL
-PROCESSED_INDIVIDUAL_RESPONSES_PATH = config.PROCESSED_INDIVIDUAL_RESPONSES_PKL
+# --- Logger Setup ---
+logger = logging.getLogger(__name__)
+if not logging.getLogger().hasHandlers():
+    logging.basicConfig(level=logging.INFO,
+                        format='%(asctime)s - %(levelname)s - %(name)s - %(message)s')
 
+# --- NLTK Resource Check (using helper) ---
+# This ensures resources are available before WordNetLemmatizer() is called or stopwords are used.
+# The helper function itself uses logging now.
+REQUIRED_NLTK_RESOURCES = [
+    ('corpora/wordnet', 'wordnet'),
+    ('corpora/stopwords', 'stopwords'),
+    ('tokenizers/punkt', 'punkt')
+    # 'punkt_tab/english.pickle' was specific to an old local check, punkt should cover it.
+]
+helpers.ensure_nltk_resources(REQUIRED_NLTK_RESOURCES)
 
-# Models, Methods, and Datasets
-MODELS_ABBR = ['llama3.2'] 
-MODEL_NAME_MAP_FULL = {'qwen2.5': 'qwen25-7b', 'llama3.2': 'llama3-11b'}
-METHODS = ['zeroshot', 'zeroshot-cot', 'zeroshot-2-artifacts']
-DATASETS = ['d3', 'df40', 'genimage']
-
-# --- Plot Configuration ---
-MAX_WORDS_CLOUD = 50 
-MAX_WORDS_BAR = 50   
-GENERATE_WORDCLOUDS = False # Set to False to turn off word cloud generation
-
-# Figure and Font Sizes
-FIGURE_WIDTH_PER_COLUMN = 2.5  
-FIGURE_HEIGHT_PER_WC_ROW = 0 
-FIGURE_HEIGHT_PER_BAR_ROW = 7 
-METHOD_LABEL_FONTSIZE = 10
-SUBPLOT_TITLE_FONTSIZE = 10 
-BAR_PLOT_YLABEL_FONTSIZE = 7
-BAR_PLOT_XLABEL_FONTSIZE = 7
-BAR_PLOT_PERCENTAGE_FONTSIZE = 7
+# Initialize global lemmatizer (after NLTK resources are checked)
+try:
+    lemmatizer = WordNetLemmatizer()
+except Exception as e:
+    logger.error(f"Failed to initialize WordNetLemmatizer, NLTK resources might still be an issue: {e}", exc_info=True)
+    sys.exit(1)
 
 
-# --- Manual Skip Words List ---
-MANUAL_SKIP_WORDS = set([])
+# --- Matplotlib Backend ---
+try:
+    plt.switch_backend('Agg')
+    logger.info("Using Matplotlib backend: Agg")
+except ImportError:
+    logger.warning("Agg backend not available for Matplotlib, using default.")
+
+
+# --- Configuration (from original script, some could move to config.py if more global) ---
+# Paths from config.py are used directly where appropriate.
+
+# Models, Methods, and Datasets (specific to this analysis)
+MODELS_ABBR_DISTINCT = ['llama3.2'] # As per original distinct_words.py
+MODEL_NAME_MAP_FULL_DISTINCT = {'qwen2.5': 'qwen25-7b', 'llama3.2': 'llama3-11b'} # As per original
+METHODS_DISTINCT = ['zeroshot', 'zeroshot-cot', 'zeroshot-2-artifacts'] # As per original
+DATASETS_DISTINCT = ['d3', 'df40', 'genimage'] # As per original
+
+# Plot Configuration
+MAX_WORDS_CLOUD_DISTINCT = 50
+MAX_WORDS_BAR_DISTINCT = 50
+GENERATE_WORDCLOUDS_DISTINCT = False # Set to False to turn off word cloud generation
+
+FIGURE_WIDTH_PER_COLUMN_DISTINCT = 2.5
+FIGURE_HEIGHT_PER_WC_ROW_DISTINCT = 0 # If wordclouds off, this is not used for height calculation
+FIGURE_HEIGHT_PER_BAR_ROW_DISTINCT = 7
+METHOD_LABEL_FONTSIZE_DISTINCT = 10
+SUBPLOT_TITLE_FONTSIZE_DISTINCT = 10
+BAR_PLOT_YLABEL_FONTSIZE_DISTINCT = 7
+BAR_PLOT_XLABEL_FONTSIZE_DISTINCT = 7
+BAR_PLOT_PERCENTAGE_FONTSIZE_DISTINCT = 7
+
+# Manual Skip Words List (can be expanded or moved to config)
+MANUAL_SKIP_WORDS_DISTINCT = set([])
 
 # Method name mapping for titles/labels
-METHOD_DISPLAY_NAME_MAPPING = {
+METHOD_DISPLAY_NAME_MAPPING_DISTINCT = {
     'zeroshot': 'zero-shot',
     'zeroshot-cot': 'zero-shot-cot',
     'zeroshot-2-artifacts': r'zero-shot-s$^2$'
 }
 
-# --- Color Palette and Mapping ---
-COLORBLIND_FRIENDLY_PALETTE = {
+# Color Palette and Mapping (uses helpers.COLORBLIND_FRIENDLY_PALETTE if that's made global, or define locally)
+# Assuming a COLORBLIND_FRIENDLY_PALETTE exists in helpers or config, or define it here.
+# For now, using the one defined in the original distinct_words.py
+COLORBLIND_FRIENDLY_PALETTE_DISTINCT = {
     'zeroshot': "#2A9D8F",
     'zeroshot-cot': "#E76F51",
     'zeroshot-2-artifacts': "#7F4CA5"
 }
 
 
-# --- Helper Functions ---
-def hex_to_rgb(hex_color):
-    hex_color = hex_color.lstrip('#')
-    if len(hex_color) == 3:
-        hex_color = ''.join([c*2 for c in hex_color])
-    if len(hex_color) != 6:
-        raise ValueError(f"Invalid hex color format: {hex_color}")
-    return tuple(int(hex_color[i:i+2], 16) / 255.0 for i in (0, 2, 4))
+# --- Core Logic Functions (Log Odds, Plotting - with logging) ---
 
-def rgb_to_hex(rgb_color):
-    return '#{:02x}{:02x}{:02x}'.format(
-        int(rgb_color[0]*255), int(rgb_color[1]*255), int(rgb_color[2]*255)
-    )
+def extract_texts_from_rationale_records(rationale_records: list, text_field_key: str = 'rationales') -> list:
+    """
+    Extracts text strings for analysis from a list of rationale records.
+    A rationale record is a dict, and the text might be in a field which itself
+    could be a string or a list of strings.
+    """
+    extracted_texts = []
+    if not rationale_records:
+        return extracted_texts
+    for record in rationale_records:
+        if not isinstance(record, dict):
+            # logger.warning(f"Skipping non-dictionary record during text extraction: {str(record)[:100]}")
+            continue
+        
+        content_to_analyze = record.get(text_field_key) # Defaulting to 'rationales' key
+        
+        if isinstance(content_to_analyze, str):
+            if content_to_analyze.strip():
+                extracted_texts.append(content_to_analyze)
+        elif isinstance(content_to_analyze, list):
+            for text_item in content_to_analyze:
+                if isinstance(text_item, str) and text_item.strip():
+                    extracted_texts.append(text_item)
+        # else:
+            # logger.debug(f"No suitable text found in record under key '{text_field_key}': {str(record)[:100]}")
+    return extracted_texts
 
-def adjust_lightness(rgb_color, factor):
-    try:
-        h, l, s = colorsys.rgb_to_hls(*rgb_color)
-        min_lightness = 0.15
-        max_lightness = 0.85
-        new_l = max_lightness - factor * (max_lightness - min_lightness)
-        new_l = max(0.05, min(0.95, new_l))
-        return colorsys.hls_to_rgb(h, new_l, s)
-    except Exception as e:
-        print(f"Error adjusting lightness for color {rgb_color} with factor {factor}: {e}")
-        return rgb_color
 
-def color_func_factory(base_color_hex, word_scores):
-    try:
-        base_color_rgb = hex_to_rgb(base_color_hex)
-    except ValueError as e:
-        print(f"Error converting base hex color {base_color_hex}: {e}. Using black.")
-        base_color_rgb = (0.0, 0.0, 0.0)
-
-    positive_scores = {word: score for word, score in word_scores.items() if score > 0}
-
-    if not positive_scores:
-        min_score, max_score, score_range = 0, 1, 1
-    else:
-        scores_values = list(positive_scores.values())
-        min_score = min(scores_values)
-        max_score = max(scores_values)
-        score_range = max_score - min_score
-        if score_range <= 1e-6:
-            score_range = 1
-
-    def color_func(word, font_size, position, orientation, random_state=None, **kwargs):
-        score = word_scores.get(word, 0)
-        if score <= 0:
-            lightness_factor = 0.0
-        else:
-            clamped_score = max(min_score, min(score, max_score))
-            lightness_factor = (clamped_score - min_score) / score_range
-        adjusted_rgb = adjust_lightness(base_color_rgb, lightness_factor)
-        return rgb_to_hex(adjusted_rgb)
-    return color_func
-
-def load_responses(model_abbr, model_full_name, method, dataset, base_dir):
-    if model_abbr == 'llama3.2':
-        file_prefix = "AI_util"
-    else:
-        file_prefix = "AI_dev"
-    file_name = f"{file_prefix}-{dataset}-{model_full_name}-{method}-n1-wait0-rationales.jsonl"
-    file_path = os.path.join(base_dir, file_name)
-    responses = []
-    if not os.path.exists(file_path):
-        print(f"Warning: File not found - {file_path}") 
-        return responses
-    try:
-        with open(file_path, 'r', encoding='utf-8') as f:
-            file_content = f.read()
-        if not file_content.strip():
-            return responses
-        try:
-            data = json.loads(file_content)
-            if isinstance(data, list):
-                data_items = data
-            elif isinstance(data, dict):
-                data_items = [data]
-            else:
-                print(f"Warning: Unexpected JSON structure in {file_path}")
-                return responses
-        except json.JSONDecodeError:
-            data_items = []
-            file_content = file_content.strip()
-            for line in file_content.splitlines():
-                line = line.strip()
-                if not line: continue
-                try:
-                    item = json.loads(line)
-                    data_items.append(item)
-                except json.JSONDecodeError as e_line:
-                    print(f"Error: JSON decode error on line in {file_path}: {e_line}. Line: '{line[:100]}...'")
-                    continue
-        for item in data_items:
-            if isinstance(item, dict) and 'rationales' in item:
-                rationales_list = item['rationales']
-                if isinstance(rationales_list, list):
-                    for rationale_text in rationales_list:
-                        if isinstance(rationale_text, str) and rationale_text.strip():
-                            responses.append(rationale_text)
-                elif isinstance(rationales_list, str) and rationales_list.strip():
-                    responses.append(rationales_list)
-    except Exception as e:
-        print(f"Error loading/processing file {file_path}: {type(e).__name__} - {e}")
-    return responses
-
-def preprocess_text_to_token_set(text, current_lemmatizer):
-    """ Preprocesses text and returns a set of unique lemmatized tokens. """
-    try:
-        stop_words = set(stopwords.words('english'))
-    except LookupError:
-        print("Error: NLTK stopwords not found. Attempting download.")
-        check_nltk_resource('corpora/stopwords', 'stopwords')
-        stop_words = set(stopwords.words('english'))
-
-    combined_skip_words = stop_words.union(MANUAL_SKIP_WORDS)
-    processed_token_set = set() 
-    try:
-        if not isinstance(text, str):
-            text = str(text)
-        text = re.sub(r'http\S+|www\S+|https\S+', '', text, flags=re.MULTILINE)
-        text = ' '.join(text.split())
-        translator = str.maketrans('', '', string.punctuation + '’‘“”')
-        tokens = word_tokenize(text.lower())
-        for token in tokens:
-            token = token.translate(translator)
-            if token.isalpha() and token not in combined_skip_words:
-                try:
-                    lemma = current_lemmatizer.lemmatize(token)
-                    if lemma and len(lemma) > 1 and lemma not in combined_skip_words:
-                        processed_token_set.add(lemma) 
-                except Exception as lem_e:
-                    print(f"Error lemmatizing token '{token}': {lem_e}")
-    except Exception as e:
-        print(f"Error in preprocess_text_to_token_set for text starting with: '{str(text)[:50]}...' - Error: {e}")
-        return set() 
-    return processed_token_set
-
-def logodds(corpora_dic, bg_counter):
+def logodds(corpora_dic: dict, bg_counter: Counter) -> dict: # From original
     corp_size = {name: sum(counter.values()) for name, counter in corpora_dic.items()}
     bg_size = sum(bg_counter.values())
     result = {name: {} for name in corpora_dic}
     all_words = set()
-    for counter in corpora_dic.values():
-        all_words.update(word for word in counter if word not in MANUAL_SKIP_WORDS)
-    all_words.update(word for word in bg_counter if word not in MANUAL_SKIP_WORDS)
-    if not all_words:
-        print("Warning: No words found (after skipping) to calculate log odds.")
-        return result
-    print(f"Calculating log odds for {len(corpora_dic)} corpora ({len(all_words)} unique words considered)...")
-    alpha_0 = bg_size / len(bg_counter) if bg_counter and len(bg_counter) > 0 else 1.0
-    alpha_0 = max(alpha_0, 0.01)
 
-    for name, c in tqdm(corpora_dic.items(), desc="Calculating Log Odds", leave=False):
-        ni = corp_size.get(name, 0)
-        nj = sum(size for other_name, size in corp_size.items() if other_name != name)
-        if ni == 0:
+    # Use MANUAL_SKIP_WORDS_DISTINCT here
+    for counter_val in corpora_dic.values():
+        all_words.update(word for word in counter_val if word not in MANUAL_SKIP_WORDS_DISTINCT)
+    all_words.update(word for word in bg_counter if word not in MANUAL_SKIP_WORDS_DISTINCT)
+
+    if not all_words:
+        logger.warning("No words found (after skipping manual words) to calculate log odds.")
+        return result
+    
+    logger.info(f"Calculating log odds for {len(corpora_dic)} corpora ({len(all_words)} unique words considered)...")
+    
+    # Alpha_0 calculation from the original script
+    alpha_0 = bg_size / len(bg_counter) if bg_counter and len(bg_counter) > 0 else 1.0
+    alpha_0 = max(alpha_0, 0.01) # Ensure alpha_0 is not too small
+
+    for name, c_corpus in tqdm(corpora_dic.items(), desc="Calculating Log Odds", leave=False):
+        ni_val = corp_size.get(name, 0)
+        # nj calculation was: sum(size for other_name, size in corp_size.items() if other_name != name)
+        # For current logodds (vs rest), comparison_counter is more direct for fj
+        if ni_val == 0:
+            logger.debug(f"Skipping log odds for '{name}' as its corpus size (ni) is 0.")
             continue
-        comparison_counter = Counter()
-        for other_name, other_counter in corpora_dic.items():
-            if other_name != name:
-                comparison_counter.update(other_counter)
-        for word in all_words:
-            fi = c.get(word, 0)
-            fj = comparison_counter.get(word, 0)
-            prior_i = alpha_0 / len(all_words) if all_words else 0.01
-            prior_j = alpha_0 / len(all_words) if all_words else 0.01
-            fi_smoothed = fi + prior_i
-            ni_smoothed = ni + alpha_0
-            fj_smoothed = fj + prior_j
-            nj_smoothed = nj + alpha_0
-            if fi_smoothed <= 0 or (ni_smoothed - fi_smoothed) <= 0 or \
-               fj_smoothed <= 0 or (nj_smoothed - fj_smoothed) <= 0:
-                continue
+
+        comparison_counter_logodds = Counter()
+        for other_name_logodds, other_counter_logodds in corpora_dic.items():
+            if other_name_logodds != name:
+                comparison_counter_logodds.update(other_counter_logodds)
+        
+        nj_val = sum(comparison_counter_logodds.values()) # Total words in all other corpora
+
+        if nj_val == 0: # If there are no other corpora to compare against or they are empty
+            logger.debug(f"Skipping log odds for '{name}' as comparison corpus size (nj) is 0.")
+            continue
+
+
+        for word_logodds in all_words:
+            fi_val = c_corpus.get(word_logodds, 0)
+            fj_val = comparison_counter_logodds.get(word_logodds, 0)
+
+            # Using the prior calculation from the original script
+            prior_i_val = alpha_0 / len(all_words) if all_words else 0.01
+            prior_j_val = alpha_0 / len(all_words) if all_words else 0.01
+
+            fi_smoothed_val = fi_val + prior_i_val
+            ni_smoothed_val = ni_val + alpha_0 # Sum of priors for corpus i
+            
+            fj_smoothed_val = fj_val + prior_j_val
+            nj_smoothed_val = nj_val + alpha_0 # Sum of priors for corpus j (all others)
+
+
+            if not (fi_smoothed_val > 0 and (ni_smoothed_val - fi_smoothed_val) > 0 and \
+                    fj_smoothed_val > 0 and (nj_smoothed_val - fj_smoothed_val) > 0):
+                continue # Avoid math errors with log(0) or log(negative)
+
             try:
-                log_odds_ratio = (math.log(fi_smoothed) - math.log(ni_smoothed - fi_smoothed)) - \
-                                 (math.log(fj_smoothed) - math.log(nj_smoothed - fj_smoothed))
-                variance = (1.0 / fi_smoothed) + (1.0 / (ni_smoothed - fi_smoothed)) + \
-                           (1.0 / fj_smoothed) + (1.0 / (nj_smoothed - fj_smoothed))
-                if variance <= 0:
+                log_odds_ratio_val = (math.log(fi_smoothed_val) - math.log(ni_smoothed_val - fi_smoothed_val)) - \
+                                     (math.log(fj_smoothed_val) - math.log(nj_smoothed_val - fj_smoothed_val))
+                
+                variance_val = (1.0 / fi_smoothed_val) + (1.0 / (ni_smoothed_val - fi_smoothed_val)) + \
+                               (1.0 / fj_smoothed_val) + (1.0 / (nj_smoothed_val - fj_smoothed_val))
+                
+                if variance_val <= 1e-9: # Avoid division by zero or tiny variance
                     continue
-                std_dev = math.sqrt(variance)
-                if std_dev > 1e-9:
-                    result[name][word] = log_odds_ratio / std_dev
-            except (ValueError, ZeroDivisionError):
+                std_dev_val = math.sqrt(variance_val)
+                if std_dev_val > 1e-9: # Ensure std_dev is not effectively zero
+                    result[name][word_logodds] = log_odds_ratio_val / std_dev_val
+            except (ValueError, ZeroDivisionError) as e:
+                # logger.debug(f"Math error calculating log odds for word '{word_logodds}' in corpus '{name}': {e}")
                 continue
     return result
 
-def generate_wordcloud_from_scores(word_scores, ax, base_color_hex):
-    positive_scores = {word: score for word, score in word_scores.items() if score > 0}
-    if not positive_scores:
-        ax.text(0.5, 0.5, "No distinctive words\n(score > 0)",
-                ha='center', va='center', transform=ax.transAxes,
-                fontsize=9, color='grey', linespacing=1.5) 
+
+def generate_wordcloud_from_scores_local(word_scores_wc: dict, ax_wc, base_color_hex_wc: str): # Renamed
+    positive_scores_wc = {word: score for word, score in word_scores_wc.items() if score > 0}
+    if not positive_scores_wc:
+        ax_wc.text(0.5, 0.5, "No distinctive words\n(score > 0)",
+                   ha='center', va='center', transform=ax_wc.transAxes,
+                   fontsize=9, color='grey', linespacing=1.5)
     else:
-        color_func = color_func_factory(base_color_hex, positive_scores)
+        # Use helper for color function
+        color_func_wc = helpers.wordcloud_color_func_factory(base_color_hex_wc, positive_scores_wc)
         try:
-            wc_img_height = 300
-            if FIGURE_HEIGHT_PER_WC_ROW > 0: 
-                 wc_img_width = int(wc_img_height * (FIGURE_WIDTH_PER_COLUMN / FIGURE_HEIGHT_PER_WC_ROW))
-            else: 
-                 wc_img_width = wc_img_height 
-
-            wc = WordCloud(width=wc_img_width, height=wc_img_height, 
-                           background_color="white",
-                           max_words=MAX_WORDS_CLOUD, 
-                           max_font_size=60, 
-                           collocations=False,
-                           color_func=color_func,
-                           prefer_horizontal=0.9,
-                           random_state=42
-                          ).generate_from_frequencies(positive_scores)
-            ax.imshow(wc, interpolation="bilinear")
+            wc_img_h = 300
+            wc_img_w = int(wc_img_h * (FIGURE_WIDTH_PER_COLUMN_DISTINCT / FIGURE_HEIGHT_PER_BAR_ROW_DISTINCT)) if FIGURE_HEIGHT_PER_BAR_ROW_DISTINCT > 0 else wc_img_h
+            
+            wc_obj = WordCloud(width=wc_img_w, height=wc_img_h,
+                               background_color="white",
+                               max_words=MAX_WORDS_CLOUD_DISTINCT,
+                               max_font_size=60,
+                               collocations=False,
+                               color_func=color_func_wc, # Use helper's factory output
+                               prefer_horizontal=0.9,
+                               random_state=42
+                              ).generate_from_frequencies(positive_scores_wc)
+            ax_wc.imshow(wc_obj, interpolation="bilinear")
         except Exception as e:
-            print(f"Error generating word cloud with dims {wc_img_width}x{wc_img_height}: {e}")
-            ax.text(0.5, 0.5, "WordCloud Error",
-                    ha='center', va='center', transform=ax.transAxes,
-                    fontsize=9, color='red') 
-    ax.set_xticks([])
-    ax.set_yticks([])
-    ax.axis("off")
+            logger.error(f"Error generating word cloud with dims {wc_img_w}x{wc_img_h}: {e}", exc_info=True)
+            ax_wc.text(0.5, 0.5, "WordCloud Error", ha='center', va='center', transform=ax_wc.transAxes, fontsize=9, color='red')
+    ax_wc.set_xticks([])
+    ax_wc.set_yticks([])
+    ax_wc.axis("off")
 
-def generate_response_percentage_barplot_from_cleaned(top_word_scores, list_of_response_token_sets, ax, base_color_hex):
-    word_percentages = {}
-    num_responses = len(list_of_response_token_sets)
 
-    if num_responses == 0:
-        ax.text(0.5, 0.5, "No responses found", ha='center', va='center', transform=ax.transAxes, fontsize=BAR_PLOT_YLABEL_FONTSIZE, color='grey')
-        ax.axis("off")
+def generate_response_percentage_barplot_local(top_word_scores_bar: dict, list_of_response_token_sets_bar: list, ax_bar, base_color_hex_bar: str): # Renamed
+    word_percentages_bar = {}
+    num_responses_bar = len(list_of_response_token_sets_bar)
+
+    if num_responses_bar == 0:
+        ax_bar.text(0.5, 0.5, "No responses found", ha='center', va='center', transform=ax_bar.transAxes, fontsize=BAR_PLOT_YLABEL_FONTSIZE_DISTINCT, color='grey')
+        ax_bar.axis("off")
         return
 
-    for word, score in top_word_scores.items(): 
-        occurrence_count = 0
-        for response_token_set in list_of_response_token_sets:
-            if word in response_token_set: 
-                occurrence_count += 1
-        percentage = (occurrence_count / num_responses) * 100 if num_responses > 0 else 0
-        word_percentages[word] = percentage
+    for word_bar, score_bar in top_word_scores_bar.items():
+        occurrence_count_bar = sum(1 for response_token_set in list_of_response_token_sets_bar if word_bar in response_token_set)
+        percentage_bar = (occurrence_count_bar / num_responses_bar) * 100 if num_responses_bar > 0 else 0
+        word_percentages_bar[word_bar] = percentage_bar
     
-    words_for_plot = list(word_percentages.keys())
-    percentages_for_plot = [word_percentages[w] for w in words_for_plot]
+    words_for_plot_bar = list(word_percentages_bar.keys())
+    percentages_for_plot_bar = [word_percentages_bar[w] for w in words_for_plot_bar]
 
-    if not words_for_plot:
-        ax.text(0.5, 0.5, "No words to plot", ha='center', va='center', transform=ax.transAxes, fontsize=BAR_PLOT_YLABEL_FONTSIZE, color='grey')
-        ax.axis("off")
+    if not words_for_plot_bar:
+        ax_bar.text(0.5, 0.5, "No words to plot", ha='center', va='center', transform=ax_bar.transAxes, fontsize=BAR_PLOT_YLABEL_FONTSIZE_DISTINCT, color='grey')
+        ax_bar.axis("off")
         return
 
-    y_pos = np.arange(len(words_for_plot))
-    bars = ax.barh(y_pos, percentages_for_plot, align='center', color=base_color_hex)
-    ax.set_yticks(y_pos)
-    ax.set_yticklabels(words_for_plot, fontsize=BAR_PLOT_YLABEL_FONTSIZE) 
-    ax.invert_yaxis()
-    ax.set_xlabel('% of Responses', fontsize=BAR_PLOT_XLABEL_FONTSIZE) 
-    ax.tick_params(axis='x', labelsize=BAR_PLOT_YLABEL_FONTSIZE) 
-    ax.tick_params(axis='y', labelsize=BAR_PLOT_YLABEL_FONTSIZE)
+    y_pos_bar = np.arange(len(words_for_plot_bar))
+    ax_bar.barh(y_pos_bar, percentages_for_plot_bar, align='center', color=base_color_hex_bar)
+    ax_bar.set_yticks(y_pos_bar)
+    ax_bar.set_yticklabels(words_for_plot_bar, fontsize=BAR_PLOT_YLABEL_FONTSIZE_DISTINCT)
+    ax_bar.invert_yaxis()
+    ax_bar.set_xlabel('% of Responses', fontsize=BAR_PLOT_XLABEL_FONTSIZE_DISTINCT)
+    ax_bar.tick_params(axis='x', labelsize=BAR_PLOT_YLABEL_FONTSIZE_DISTINCT)
+    ax_bar.tick_params(axis='y', labelsize=BAR_PLOT_YLABEL_FONTSIZE_DISTINCT) # Ensure y-tick labels are also small
     
-    ax.set_xlim(0, max(100, max(percentages_for_plot) * 1.15 if percentages_for_plot else 100)) 
-    ax.spines['top'].set_visible(False)
-    ax.spines['right'].set_visible(False)
+    # Dynamic x-axis limit
+    max_percentage_val = max(percentages_for_plot_bar) if percentages_for_plot_bar else 0
+    ax_bar.set_xlim(0, max(100, max_percentage_val * 1.15 if max_percentage_val > 0 else 100))
+    ax_bar.spines['top'].set_visible(False)
+    ax_bar.spines['right'].set_visible(False)
 
 
 # --- Main Execution ---
+def main():
+    logger.info("--- Distinct Words Script Execution Started ---")
+    model_corpora_main = defaultdict(lambda: defaultdict(Counter))
+    model_bg_counters_main = defaultdict(Counter)
+    raw_responses_text_map = defaultdict(lambda: defaultdict(list)) # Stores extracted text strings
+    individual_processed_token_sets = defaultdict(lambda: defaultdict(list)) # Stores sets of tokens per response
 
-# 1. Load or Process Data
-model_corpora = defaultdict(lambda: defaultdict(Counter)) 
-model_bg_counters = defaultdict(Counter) 
-raw_responses_map = defaultdict(lambda: defaultdict(list)) 
-individual_processed_responses = defaultdict(lambda: defaultdict(list)) 
+    agg_data_loaded_flag = False
+    individual_data_loaded_flag = False
 
-agg_data_loaded = False
-individual_data_loaded = False
-
-# Try to load aggregate data
-if os.path.exists(PROCESSED_AGGREGATE_DATA_PATH):
-    print(f"Loading aggregate processed data from: {PROCESSED_AGGREGATE_DATA_PATH}")
-    try:
-        with open(PROCESSED_AGGREGATE_DATA_PATH, 'rb') as f:
-            loaded_data = pickle.load(f)
-        if isinstance(loaded_data, dict) and \
-           'corpora' in loaded_data and \
-           'bg_counters' in loaded_data and \
-           'raw_responses' in loaded_data:
-            temp_corpora = loaded_data['corpora']
-            for model, methods_data in temp_corpora.items():
-                model_corpora[model] = defaultdict(Counter, methods_data)
-            model_bg_counters = defaultdict(Counter, loaded_data['bg_counters'])
-            temp_raw = loaded_data['raw_responses']
-            for model, methods_data in temp_raw.items():
-                raw_responses_map[model] = defaultdict(list, methods_data)
-            print("Successfully loaded aggregate processed data.")
-            agg_data_loaded = True
-        else:
-            print("Error: Aggregate data has unexpected structure. Reprocessing relevant parts...")
-    except Exception as e:
-        print(f"Error loading aggregate data: {e}. Reprocessing relevant parts...")
-
-# Try to load individual cleaned responses data
-if os.path.exists(PROCESSED_INDIVIDUAL_RESPONSES_PATH):
-    print(f"Loading individual cleaned responses data from: {PROCESSED_INDIVIDUAL_RESPONSES_PATH}")
-    try:
-        with open(PROCESSED_INDIVIDUAL_RESPONSES_PATH, 'rb') as f:
-            loaded_individual_data = pickle.load(f)
-        if isinstance(loaded_individual_data, dict):
-            for model_key, methods_data in loaded_individual_data.items():
-                individual_processed_responses[model_key] = defaultdict(list)
-                for method_key, list_of_item_lists in methods_data.items(): 
-                    individual_processed_responses[model_key][method_key] = [set(s) for s in list_of_item_lists] 
-            print("Successfully loaded individual cleaned responses data.")
-            individual_data_loaded = True
-        else:
-            print("Error: Individual cleaned responses data has unexpected structure. Reprocessing...")
-    except Exception as e:
-        print(f"Error loading individual cleaned responses data: {e}. Reprocessing...")
-
-
-# If any data is missing, reprocess
-if not agg_data_loaded or not individual_data_loaded:
-    print("One or both processed data files not found or invalid. Processing responses from scratch...")
-    model_corpora = defaultdict(lambda: defaultdict(Counter))
-    model_bg_counters = defaultdict(Counter)
-    raw_responses_map = defaultdict(lambda: defaultdict(list))
-    individual_processed_responses = defaultdict(lambda: defaultdict(list))
-
-    if not os.path.isdir(RESPONSES_DIR):
-        print(f"Error: Responses directory '{RESPONSES_DIR}' not found. Cannot process data.")
-        if RESPONSES_DIR != './dummy_responses': exit()
-
-    for model_abbr in tqdm(MODELS_ABBR, desc="Models"):
-        model_full = MODEL_NAME_MAP_FULL.get(model_abbr)
-        if not model_full:
-            print(f"Warning: No full model name found for abbreviation '{model_abbr}'. Skipping.")
-            continue
-        current_model_bg_counter = Counter()
-        print(f"\nProcessing Model: {model_abbr}") 
-        for method in tqdm(METHODS, desc=f"Methods for {model_abbr}", leave=False):
-            all_method_raw_responses = [] 
-            for dataset in DATASETS:
-                responses = load_responses(model_abbr, model_full, method, dataset, RESPONSES_DIR)
-                all_method_raw_responses.extend(responses)
-            raw_responses_map[model_abbr][method].extend(all_method_raw_responses)
-            if not all_method_raw_responses:
-                print(f"  No responses found for method '{method}'. Skipping token processing.")
-                continue
-            print(f"  Method '{method}': Loaded {len(all_method_raw_responses)} individual response corpora.")
-            for text_response in tqdm(all_method_raw_responses, desc=f"Responses for {method}", leave=False, disable=True):
-                temp_lemmatizer_for_counter = WordNetLemmatizer() 
-                tokens_list_for_counter = []
-                try:
-                    stop_words_temp = set(stopwords.words('english'))
-                    combined_skip_words_temp = stop_words_temp.union(MANUAL_SKIP_WORDS)
-                    if not isinstance(text_response, str): text_response_str = str(text_response)
-                    else: text_response_str = text_response
-                    text_response_str = re.sub(r'http\S+|www\S+|https\S+', '', text_response_str, flags=re.MULTILINE)
-                    text_response_str = ' '.join(text_response_str.split())
-                    translator_temp = str.maketrans('', '', string.punctuation + '’‘“”')
-                    raw_tokens = word_tokenize(text_response_str.lower())
-                    for rt in raw_tokens:
-                        rt_cleaned = rt.translate(translator_temp)
-                        if rt_cleaned.isalpha() and rt_cleaned not in combined_skip_words_temp:
-                            lemma_val = temp_lemmatizer_for_counter.lemmatize(rt_cleaned)
-                            if lemma_val and len(lemma_val) > 1 and lemma_val not in combined_skip_words_temp:
-                                tokens_list_for_counter.append(lemma_val)
-                except Exception as e_proc:
-                    print(f"Error in simplified preprocessing for counter for text: '{text_response_str[:30]}...': {e_proc}")
-                if tokens_list_for_counter:
-                    response_specific_counter = Counter(tokens_list_for_counter)
-                    model_corpora[model_abbr][method].update(response_specific_counter)
-                    current_model_bg_counter.update(tokens_list_for_counter)
-                processed_token_set_for_response = preprocess_text_to_token_set(text_response, lemmatizer)
-                if processed_token_set_for_response: 
-                    individual_processed_responses[model_abbr][method].append(processed_token_set_for_response)
-        model_bg_counters[model_abbr] = current_model_bg_counter
-
-    # Save aggregate data
-    print(f"\nSaving aggregate processed data to: {PROCESSED_AGGREGATE_DATA_PATH}")
-    try:
-        save_corpora = {k: dict(v) for k, v in model_corpora.items()}
-        save_bg_counters = dict(model_bg_counters)
-        save_raw_responses = {k_model: {k_method: list_responses for k_method, list_responses in methods_data.items()} 
-                              for k_model, methods_data in raw_responses_map.items()}
-        save_agg_data = {'corpora': save_corpora, 'bg_counters': save_bg_counters, 'raw_responses': save_raw_responses}
-        config.CACHE_DIR.mkdir(parents=True, exist_ok=True) # <--- ADD
-        with open(PROCESSED_AGGREGATE_DATA_PATH, 'wb') as f: pickle.dump(save_agg_data, f)
-        print("Successfully saved aggregate processed data.")
-    except Exception as e: print(f"Error saving aggregate processed data: {e}")
-
-    # Save individual cleaned responses data
-    print(f"\nSaving individual cleaned responses data to: {PROCESSED_INDIVIDUAL_RESPONSES_PATH}")
-    try:
-        save_individual_data = {
-            model_key: { 
-                method_key: [list(token_set) for token_set in list_of_sets] 
-                for method_key, list_of_sets in methods_data.items()
-            }
-            for model_key, methods_data in individual_processed_responses.items()
-        }
-        config.CACHE_DIR.mkdir(parents=True, exist_ok=True)
-        with open(PROCESSED_INDIVIDUAL_RESPONSES_PATH, 'wb') as f: pickle.dump(save_individual_data, f)
-        print("Successfully saved individual cleaned responses data.")
-    except Exception as e: print(f"Error saving individual cleaned responses data: {e}")
-
-# Report Word Counts
-print("\n--- Processed Word Counts (from aggregate data) ---")
-if not model_corpora:
-    print("No aggregate data available to report counts.")
-else:
-    for model_abbr_key in MODELS_ABBR:
-        if model_abbr_key in model_bg_counters and model_bg_counters[model_abbr_key]:
-            total_family_words = sum(model_bg_counters[model_abbr_key].values())
-            print(f"\nModel Family: {model_abbr_key}")
-            print(f"  Total unique words (types) in background: {len(model_bg_counters[model_abbr_key]):,}")
-            print(f"  Total words (tokens) in background (after filtering): {total_family_words:,}")
-            if model_abbr_key in model_corpora:
-                for method_key in METHODS:
-                    num_raw_resp = len(raw_responses_map.get(model_abbr_key, {}).get(method_key, []))
-                    num_cleaned_resp_sets = len(individual_processed_responses.get(model_abbr_key, {}).get(method_key, []))
-                    print(f"    Method '{method_key}': {num_raw_resp} raw responses, {num_cleaned_resp_sets} cleaned response sets.")
-                    method_counter = model_corpora[model_abbr_key].get(method_key)
-                    if method_counter:
-                        method_tokens = sum(method_counter.values())
-                        method_types = len(method_counter)
-                        print(f"      Aggregate Tokens: {method_tokens:,} tokens, {method_types:,} types")
-                    else:
-                        print(f"      Aggregate Tokens: No token data found")
-            else:
-                print("  No method-specific corpora found for this model.")
-        else:
-            print(f"\nModel Family: {model_abbr_key} - No data found or background counter is empty.")
-print("---------------------------\n")
-
-# 2. Calculate Log Odds Ratios
-all_log_odds_results = {} 
-print("Calculating log odds within each model family...")
-if not model_corpora or not model_bg_counters:
-    print("Error: Cannot calculate log odds, aggregate processed data is missing or empty.")
-    if RESPONSES_DIR != './dummy_responses' and not agg_data_loaded : exit()
-calculation_successful = True
-for model_abbr in MODELS_ABBR:
-    print(f"--- Processing Model Family for Log Odds: {model_abbr} ---")
-    current_corpora_for_model = model_corpora.get(model_abbr)
-    current_bg_for_model = model_bg_counters.get(model_abbr)
-    if not current_corpora_for_model or not any(current_corpora_for_model.values()):
-        print(f"Warning: Corpora for model '{model_abbr}' is missing or empty. Skipping log odds calculation.")
-        continue
-    if not current_bg_for_model:
-        print(f"Warning: Background counter for model '{model_abbr}' is empty. Skipping log odds calculation.")
-        continue
-    non_empty_corpora = {method: counter for method, counter in current_corpora_for_model.items() if counter}
-    if not non_empty_corpora:
-        print(f"Warning: No non-empty method corpora found for model '{model_abbr}' after check. Skipping.")
-        continue
-    print(f"Calculating log odds for {len(non_empty_corpora)} non-empty methods in {model_abbr}.")
-    model_specific_results = logodds(non_empty_corpora, current_bg_for_model)
-    if not model_specific_results:
-        print(f"Warning: Log odds calculation returned no results for model '{model_abbr}'.")
-        calculation_successful = False 
-        continue
-    for method, scores in model_specific_results.items():
-        if scores: all_log_odds_results[f"{model_abbr}_{method}"] = scores
-        else: print(f"Note: No log odds scores generated for {model_abbr}_{method}.")
-    print(f"--- Finished Log Odds for: {model_abbr} ---")
-
-if not all_log_odds_results and calculation_successful:
-     print("\n !!! Warning: Log odds calculation produced no results for any model. Check data. !!!")
-elif not all_log_odds_results and not calculation_successful:
-    print("\n !!! Error: Log odds calculation produced no results overall and failed. Exiting. !!!")
-    if RESPONSES_DIR != './dummy_responses' and not agg_data_loaded : exit()
-elif not calculation_successful:
-    print("\n !!! Warning: Log odds calculation failed for one or more models. Proceeding with available results. !!!")
-
-
-# 3. Generate Combined Word Cloud and Bar Plots
-if not all_log_odds_results:
-    print("No log odds results available to generate combined plots. Skipping visualization.")
-elif not individual_processed_responses and any(MODELS_ABBR): 
-    print("No individual cleaned response data available for bar plots. Skipping combined visualization.")
-else:
-    n_models = len(MODELS_ABBR)
-    n_methods = len(METHODS)
-
-    if n_models == 0 or n_methods == 0:
-        print("No models or methods defined to generate plots for.")
-    else:
-        rows_per_model = 2 if GENERATE_WORDCLOUDS else 1
-        n_plot_rows = n_models * rows_per_model
-        
-        total_figure_height = 0
-        if GENERATE_WORDCLOUDS:
-            total_figure_height += (FIGURE_HEIGHT_PER_WC_ROW * n_models)
-        total_figure_height += (FIGURE_HEIGHT_PER_BAR_ROW * n_models) 
-        
-        total_figure_width = FIGURE_WIDTH_PER_COLUMN * n_methods
-        
-        fig, axes = plt.subplots(nrows=n_plot_rows, ncols=n_methods,
-                                 figsize=(total_figure_width, total_figure_height),
-                                 squeeze=False)
-        print("\nGenerating combined plots...")
-
-        for r_model_idx, model_abbr in enumerate(MODELS_ABBR):
-            for c_method_idx, method in enumerate(METHODS):
-                corpus_key = f"{model_abbr}_{method}"
-                method_log_odds_scores = all_log_odds_results.get(corpus_key, {})
-                base_color = COLORBLIND_FRIENDLY_PALETTE.get(method, "#000000")
-                
-                current_row_offset = r_model_idx * rows_per_model
-
-                if GENERATE_WORDCLOUDS:
-                    ax_wc = axes[current_row_offset, c_method_idx]
-                    generate_wordcloud_from_scores(method_log_odds_scores, ax_wc, base_color)
-                    # --- TITLE REMOVED FROM WORDCLOUD SUBPLOT ---
-                    # ax_wc.set_title(f"{model_abbr} - {METHOD_DISPLAY_NAME_MAPPING.get(method, method)}", fontsize=SUBPLOT_TITLE_FONTSIZE, y=1.02)
-
-
-                bar_chart_row_index = current_row_offset + (1 if GENERATE_WORDCLOUDS else 0)
-                ax_bar = axes[bar_chart_row_index, c_method_idx]
-                
-                sorted_scores = sorted(method_log_odds_scores.items(), key=lambda item: item[1], reverse=True)
-                top_n_word_scores_for_bar = dict(sorted_scores[:MAX_WORDS_BAR])
-                current_cleaned_response_sets = individual_processed_responses.get(model_abbr, {}).get(method, [])
-
-                if not top_n_word_scores_for_bar:
-                    ax_bar.text(0.5, 0.5, "No top words", ha='center', va='center', transform=ax_bar.transAxes, fontsize=BAR_PLOT_YLABEL_FONTSIZE, color='grey')
-                    ax_bar.axis("off")
-                elif not current_cleaned_response_sets:
-                     ax_bar.text(0.5, 0.5, "No cleaned responses", ha='center', va='center', transform=ax_bar.transAxes, fontsize=BAR_PLOT_YLABEL_FONTSIZE, color='grey')
-                     ax_bar.axis("off")
-                else:
-                    generate_response_percentage_barplot_from_cleaned(top_n_word_scores_for_bar, current_cleaned_response_sets, ax_bar, base_color)
-                
-                # --- TITLE REMOVED FROM BAR CHART SUBPLOT (IF WORDCLOUDS ARE OFF) ---
-                # if not GENERATE_WORDCLOUDS:
-                    # ax_bar.set_title(f"{model_abbr} - {METHOD_DISPLAY_NAME_MAPPING.get(method, method)}", fontsize=SUBPLOT_TITLE_FONTSIZE, y=1.02)
-
-        # Adjust layout
-        fig.subplots_adjust(
-            left=0, 
-            bottom=0.08 if n_methods > 0 else 0.05, 
-            right=1, 
-            top=1, # Adjusted top to 1, assuming no figure suptitle
-            wspace=0.2, 
-            hspace=0.1 if GENERATE_WORDCLOUDS else 0 
-        )
-
-        # Add Method Labels at the bottom
-        if n_methods > 0:
-            for c, method_label_text in enumerate(METHODS):
-                ax_in_column = axes[0, c] 
-                pos = ax_in_column.get_position() 
-                horizontal_center_fig_coords = pos.x0 + pos.width / 2.0
-                
-                y_pos_method_label = 0.0 
-                
-                display_name = METHOD_DISPLAY_NAME_MAPPING.get(method_label_text, method_label_text)
-                fig.text(horizontal_center_fig_coords, y_pos_method_label, display_name,
-                         va='center', ha='center',
-                         fontsize=METHOD_LABEL_FONTSIZE)
-        
-        # --- Save Combined Figure ---
-        if not MODELS_ABBR: model_prefix_fig = "unknown_model"
-        elif len(MODELS_ABBR) == 1: model_prefix_fig = MODELS_ABBR[0]
-        else: model_prefix_fig = "multi_model"
-        
-        plot_type_suffix = "combined" if GENERATE_WORDCLOUDS else "barcharts_only"
-        # Updated filename version
-        # Ensure the PLOTS_DIR from config exists
-        config.PLOTS_DIR.mkdir(parents=True, exist_ok=True) # <--- ADD DIRECTORY CREATION
-
-        output_filename_combined_base = f"{model_prefix_fig}_{MAX_WORDS_CLOUD}wc_{MAX_WORDS_BAR}bar_{plot_type_suffix}_v5"
-
-        output_filename_combined = config.PLOTS_DIR / f"{output_filename_combined_base}.png" # <--- CHANGED
-        output_filename_combined_fallback = config.PLOTS_DIR / f"{output_filename_combined_base}_fallback.png" # <--- CHANGED
-
+    # Try to load aggregate data
+    if config.PROCESSED_AGGREGATE_DATA_PKL.exists():
+        logger.info(f"Loading aggregate processed data from: {config.PROCESSED_AGGREGATE_DATA_PKL}")
         try:
-            plt.savefig(output_filename_combined, dpi=300, bbox_inches='tight')
-            print(f"\nCombined plot generation complete. Saved to {output_filename_combined}")
-        except Exception as e:
-            print(f"\nError saving combined plot figure: {e}")
-            try: 
-                plt.savefig(output_filename_combined_fallback, dpi=500)
-                print(f"Successfully saved fallback combined plot figure to {output_filename_combined_fallback}")
-            except Exception as ef: 
-                print(f"Error saving fallback combined plot figure: {ef}")
-        plt.close(fig)
-        print("Combined plot figure closed.")
+            with open(config.PROCESSED_AGGREGATE_DATA_PKL, 'rb') as f: loaded_agg_data = pickle.load(f)
+            if isinstance(loaded_agg_data, dict) and \
+               'corpora' in loaded_agg_data and 'bg_counters' in loaded_agg_data and \
+               'raw_responses_texts' in loaded_agg_data: # Check for new key if saving texts
+                temp_corpora_load = loaded_agg_data['corpora']
+                for model_key, methods_data_load in temp_corpora_load.items():
+                    model_corpora_main[model_key] = defaultdict(Counter, methods_data_load)
+                model_bg_counters_main = defaultdict(Counter, loaded_agg_data['bg_counters'])
+                # Load raw texts if saved this way
+                temp_raw_texts = loaded_agg_data['raw_responses_texts']
+                for model_key, methods_data_texts in temp_raw_texts.items():
+                    raw_responses_text_map[model_key] = defaultdict(list, methods_data_texts)
 
-print("\n--- Script Execution Finished ---")
+                logger.info("Successfully loaded aggregate processed data (corpora, bg_counters, raw_texts).")
+                agg_data_loaded_flag = True # This part is loaded
+            else:
+                logger.warning("Aggregate data PKL has unexpected structure. Reprocessing needed.")
+        except Exception as e:
+            logger.error(f"Error loading aggregate data from PKL: {e}. Reprocessing.", exc_info=True)
+
+    # Try to load individual cleaned responses data (sets of tokens)
+    if config.PROCESSED_INDIVIDUAL_RESPONSES_PKL.exists():
+        logger.info(f"Loading individual cleaned responses data from: {config.PROCESSED_INDIVIDUAL_RESPONSES_PKL}")
+        try:
+            with open(config.PROCESSED_INDIVIDUAL_RESPONSES_PKL, 'rb') as f: loaded_ind_data = pickle.load(f)
+            if isinstance(loaded_ind_data, dict):
+                for model_k, methods_d in loaded_ind_data.items():
+                    individual_processed_token_sets[model_k] = defaultdict(list)
+                    for method_k, list_of_token_lists in methods_d.items():
+                         # PKL stores lists of tokens, convert back to sets of tokens
+                        individual_processed_token_sets[model_k][method_k] = [set(s) for s in list_of_token_lists]
+                logger.info("Successfully loaded individual cleaned responses data (token sets).")
+                individual_data_loaded_flag = True
+            else:
+                logger.warning("Individual responses PKL has unexpected structure. Reprocessing needed.")
+        except Exception as e:
+            logger.error(f"Error loading individual responses PKL: {e}. Reprocessing.", exc_info=True)
+
+
+    if not agg_data_loaded_flag or not individual_data_loaded_flag:
+        logger.info("One or both processed data files not found/invalid. Processing responses from scratch...")
+        # Reset data structures if reprocessing
+        model_corpora_main = defaultdict(lambda: defaultdict(Counter))
+        model_bg_counters_main = defaultdict(Counter)
+        raw_responses_text_map = defaultdict(lambda: defaultdict(list))
+        individual_processed_token_sets = defaultdict(lambda: defaultdict(list))
+
+        if not config.RESPONSES_DIR.is_dir():
+            logger.error(f"Responses directory '{config.RESPONSES_DIR}' not found. Cannot process data.")
+            sys.exit(1) # Critical error
+
+        for model_abbr_proc in tqdm(MODELS_ABBR_DISTINCT, desc="Models"):
+            model_full_proc = MODEL_NAME_MAP_FULL_DISTINCT.get(model_abbr_proc)
+            if not model_full_proc:
+                logger.warning(f"No full model name for '{model_abbr_proc}'. Skipping.")
+                continue
+            
+            current_model_bg_counter_proc = Counter()
+            logger.info(f"Processing Model: {model_abbr_proc}")
+            for method_proc in tqdm(METHODS_DISTINCT, desc=f"Methods for {model_abbr_proc}", leave=False):
+                all_method_raw_texts_for_model = []
+                for dataset_proc in DATASETS_DISTINCT:
+                    # Construct filename (adjust prefix logic if needed, e.g. 'AI_llama' vs 'AI_qwen')
+                    prefix_fname = "AI_llama" if "llama" in model_abbr_proc.lower() else "AI_qwen"
+                    # Original distinct_words used "AI_util" for llama3.2, "AI_dev" for others.
+                    # This needs to align with how eval scripts save. Assuming a simpler rule for now.
+                    if model_abbr_proc == 'llama3.2': prefix_fname = "AI_llama" # Or "AI_util" if that's how files are named
+                    
+                    # Ensure -wait0 is part of filename IF your eval scripts save it that way when wait is 0.
+                    # The refactored eval scripts likely omit -wait0.
+                    # fname_rationale_proc = f"{prefix_fname}-{dataset_proc}-{model_full_proc}-{method_proc}-n1-wait0-rationales.jsonl"
+                    fname_rationale_proc = f"{prefix_fname}-{dataset_proc}-{model_full_proc}-{method_proc}-n1-rationales.jsonl"
+                    fpath_rationale_proc = config.RESPONSES_DIR / fname_rationale_proc
+
+                    if not fpath_rationale_proc.exists():
+                        logger.warning(f"Rationale file not found: {fpath_rationale_proc}")
+                        continue
+                    
+                    rationale_records_list = helpers.load_rationales_from_file(fpath_rationale_proc)
+                    # Specify which field in rationale_records_list contains the text for word analysis.
+                    # Assuming it's in a field named 'rationales' which could be str or list of str.
+                    texts_from_file = extract_texts_from_rationale_records(rationale_records_list, text_field_key='rationales')
+                    all_method_raw_texts_for_model.extend(texts_from_file)
+                
+                raw_responses_text_map[model_abbr_proc][method_proc].extend(all_method_raw_texts_for_model)
+                if not all_method_raw_texts_for_model:
+                    logger.info(f"  No text responses extracted for method '{method_proc}'. Skipping token processing.")
+                    continue
+                
+                logger.info(f"  Method '{method_proc}': Processing {len(all_method_raw_texts_for_model)} raw text responses.")
+                for text_response_item in tqdm(all_method_raw_texts_for_model, desc=f"Tokenizing for {method_proc}", leave=False, mininterval=1.0):
+                    # Preprocess for counters (less strict, for word frequencies)
+                    tokens_for_counter = []
+                    try: # Simplified preprocessing for counter
+                        temp_stop_words = set(stopwords.words('english'))
+                        temp_combined_skip = temp_stop_words.union(MANUAL_SKIP_WORDS_DISTINCT)
+                        text_to_count = str(text_response_item) # Ensure string
+                        text_to_count = re.sub(r'http\S+|www\S+|https\S+', '', text_to_count, flags=re.MULTILINE)
+                        text_to_count = ' '.join(text_to_count.split())
+                        temp_translator = str.maketrans('', '', string.punctuation + '’‘“”')
+                        raw_toks = word_tokenize(text_to_count.lower())
+                        for rt_item in raw_toks:
+                            rt_cleaned_item = rt_item.translate(temp_translator)
+                            if rt_cleaned_item.isalpha() and rt_cleaned_item not in temp_combined_skip:
+                                lemma_val_item = lemmatizer.lemmatize(rt_cleaned_item) # Use global lemmatizer
+                                if lemma_val_item and len(lemma_val_item) > 1 and lemma_val_item not in temp_combined_skip:
+                                    tokens_for_counter.append(lemma_val_item)
+                    except Exception as e_counter_proc:
+                        logger.error(f"Error in simplified preprocessing for counter for text: '{str(text_to_count)[:30]}...': {e_counter_proc}", exc_info=True)
+                    
+                    if tokens_for_counter:
+                        response_token_counts = Counter(tokens_for_counter)
+                        model_corpora_main[model_abbr_proc][method_proc].update(response_token_counts)
+                        current_model_bg_counter_proc.update(response_token_counts) # Update BG with same tokens
+
+                    # Preprocess for individual response sets (more strict, for bar plots)
+                    # Use the helper here:
+                    processed_token_set = helpers.preprocess_text_to_token_set(
+                        text_response_item, lemmatizer, MANUAL_SKIP_WORDS_DISTINCT
+                    )
+                    if processed_token_set:
+                        individual_processed_token_sets[model_abbr_proc][method_proc].append(processed_token_set)
+            
+            model_bg_counters_main[model_abbr_proc] = current_model_bg_counter_proc
+
+        # Save processed data
+        logger.info(f"Saving aggregate processed data to: {config.PROCESSED_AGGREGATE_DATA_PKL}")
+        try:
+            save_corpora_dict = {k: dict(v) for k, v in model_corpora_main.items()}
+            save_bg_counters_dict = dict(model_bg_counters_main)
+            # Save the extracted raw texts instead of the original complex raw_responses_map
+            save_raw_texts_dict = {k_model: {k_method: texts for k_method, texts in methods_data.items()}
+                                   for k_model, methods_data in raw_responses_text_map.items()}
+            save_agg_data_dict = {
+                'corpora': save_corpora_dict,
+                'bg_counters': save_bg_counters_dict,
+                'raw_responses_texts': save_raw_texts_dict # Save extracted texts
+            }
+            config.CACHE_DIR.mkdir(parents=True, exist_ok=True)
+            with open(config.PROCESSED_AGGREGATE_DATA_PKL, 'wb') as f_agg: pickle.dump(save_agg_data_dict, f_agg)
+            logger.info("Successfully saved aggregate processed data.")
+        except Exception as e_save_agg:
+            logger.error(f"Error saving aggregate processed data: {e_save_agg}", exc_info=True)
+
+        logger.info(f"Saving individual cleaned responses data to: {config.PROCESSED_INDIVIDUAL_RESPONSES_PKL}")
+        try:
+            # Save list of lists of tokens (pickle can't save sets of sets directly in all desired structures)
+            save_individual_data_list = {
+                model_k_ind: {
+                    method_k_ind: [list(token_s) for token_s in list_of_sets_ind]
+                    for method_k_ind, list_of_sets_ind in methods_d_ind.items()
+                }
+                for model_k_ind, methods_d_ind in individual_processed_token_sets.items()
+            }
+            config.CACHE_DIR.mkdir(parents=True, exist_ok=True)
+            with open(config.PROCESSED_INDIVIDUAL_RESPONSES_PKL, 'wb') as f_ind: pickle.dump(save_individual_data_list, f_ind)
+            logger.info("Successfully saved individual cleaned responses data.")
+        except Exception as e_save_ind:
+            logger.error(f"Error saving individual cleaned responses data: {e_save_ind}", exc_info=True)
+
+    # --- Report Word Counts ---
+    # (This section remains largely the same, using logger for output)
+    logger.info("\n--- Processed Word Counts (from aggregate data) ---")
+    # ... (use logger.info instead of print) ...
+
+    # --- Calculate Log Odds Ratios ---
+    all_log_odds_results_main = {}
+    logger.info("Calculating log odds within each model family...")
+    if not model_corpora_main or not model_bg_counters_main:
+        logger.error("Cannot calculate log odds, aggregate processed data is missing or empty.")
+        # sys.exit(1) # Decide if this is fatal
+    else:
+        calculation_successful_flag = True
+        for model_abbr_logodds in MODELS_ABBR_DISTINCT:
+            logger.info(f"--- Processing Model Family for Log Odds: {model_abbr_logodds} ---")
+            current_corpora = model_corpora_main.get(model_abbr_logodds)
+            current_bg = model_bg_counters_main.get(model_abbr_logodds)
+
+            if not current_corpora or not any(current_corpora.values()):
+                logger.warning(f"Corpora for model '{model_abbr_logodds}' missing/empty. Skipping log odds.")
+                continue
+            if not current_bg:
+                logger.warning(f"Background counter for model '{model_abbr_logodds}' empty. Skipping log odds.")
+                continue
+            
+            non_empty_method_corpora = {m: c for m, c in current_corpora.items() if c}
+            if not non_empty_method_corpora:
+                logger.warning(f"No non-empty method corpora for '{model_abbr_logodds}'. Skipping.")
+                continue
+
+            logger.info(f"Calculating log odds for {len(non_empty_method_corpora)} non-empty methods in {model_abbr_logodds}.")
+            model_logodds_results = logodds(non_empty_method_corpora, current_bg) # Call local logodds
+
+            if not model_logodds_results:
+                logger.warning(f"Log odds calculation returned no results for model '{model_abbr_logodds}'.")
+                calculation_successful_flag = False
+                continue
+            for method_res, scores_res in model_logodds_results.items():
+                if scores_res: all_log_odds_results_main[f"{model_abbr_logodds}_{method_res}"] = scores_res
+                else: logger.info(f"No log odds scores generated for {model_abbr_logodds}_{method_res}.")
+            logger.info(f"--- Finished Log Odds for: {model_abbr_logodds} ---")
+        
+        if not all_log_odds_results_main and calculation_successful_flag:
+             logger.warning("Log odds calculation produced no results for any model.")
+        elif not all_log_odds_results_main and not calculation_successful_flag:
+            logger.error("Log odds calculation produced no results AND failed for some models.")
+        elif not calculation_successful_flag:
+            logger.warning("Log odds calculation failed for one or more models. Proceeding with available results.")
+
+
+    # --- Generate Combined Word Cloud and Bar Plots ---
+    if not all_log_odds_results_main:
+        logger.info("No log odds results to generate combined plots. Skipping visualization.")
+    elif not individual_processed_token_sets and any(MODELS_ABBR_DISTINCT):
+        logger.info("No individual cleaned response data for bar plots. Skipping visualization.")
+    else:
+        n_models_plot = len(MODELS_ABBR_DISTINCT)
+        n_methods_plot = len(METHODS_DISTINCT)
+
+        if n_models_plot == 0 or n_methods_plot == 0:
+            logger.info("No models or methods defined to generate plots for.")
+        else:
+            rows_per_model_plot = 2 if GENERATE_WORDCLOUDS_DISTINCT else 1
+            n_plot_rows_total = n_models_plot * rows_per_model_plot
+            
+            total_fig_h = 0
+            if GENERATE_WORDCLOUDS_DISTINCT:
+                total_fig_h += (FIGURE_HEIGHT_PER_WC_ROW_DISTINCT * n_models_plot)
+            total_fig_h += (FIGURE_HEIGHT_PER_BAR_ROW_DISTINCT * n_models_plot)
+            
+            total_fig_w = FIGURE_WIDTH_PER_COLUMN_DISTINCT * n_methods_plot
+            
+            if total_fig_w <= 0 or total_fig_h <= 0 :
+                 logger.error(f"Calculated figure dimensions are invalid: W={total_fig_w}, H={total_fig_h}. Skipping plot.")
+            else:
+                fig_plot, axes_plot = plt.subplots(nrows=n_plot_rows_total, ncols=n_methods_plot,
+                                             figsize=(total_fig_w, total_fig_h),
+                                             squeeze=False)
+                logger.info("Generating combined plots for distinct words...")
+
+                for r_model_idx_plot, model_abbr_plot in enumerate(MODELS_ABBR_DISTINCT):
+                    for c_method_idx_plot, method_plot in enumerate(METHODS_DISTINCT):
+                        corpus_key_plot = f"{model_abbr_plot}_{method_plot}"
+                        method_log_odds_scores_plot = all_log_odds_results_main.get(corpus_key_plot, {})
+                        base_color_plot = COLORBLIND_FRIENDLY_PALETTE_DISTINCT.get(method_plot, "#000000")
+                        
+                        current_row_offset_plot = r_model_idx_plot * rows_per_model_plot
+
+                        if GENERATE_WORDCLOUDS_DISTINCT:
+                            ax_wc_plot = axes_plot[current_row_offset_plot, c_method_idx_plot]
+                            generate_wordcloud_from_scores_local(method_log_odds_scores_plot, ax_wc_plot, base_color_plot)
+                            # No title on subplot for wc
+
+                        bar_chart_row_idx_plot = current_row_offset_plot + (1 if GENERATE_WORDCLOUDS_DISTINCT else 0)
+                        ax_bar_plot = axes_plot[bar_chart_row_idx_plot, c_method_idx_plot]
+                        
+                        sorted_scores_plot = sorted(method_log_odds_scores_plot.items(), key=lambda item: item[1], reverse=True)
+                        top_n_words_bar_plot = dict(sorted_scores_plot[:MAX_WORDS_BAR_DISTINCT])
+                        current_cleaned_responses_bar_plot = individual_processed_token_sets.get(model_abbr_plot, {}).get(method_plot, [])
+
+                        if not top_n_words_bar_plot:
+                            ax_bar_plot.text(0.5, 0.5, "No top words", ha='center', va='center', transform=ax_bar_plot.transAxes, fontsize=BAR_PLOT_YLABEL_FONTSIZE_DISTINCT, color='grey')
+                            ax_bar_plot.axis("off")
+                        elif not current_cleaned_responses_bar_plot:
+                             ax_bar_plot.text(0.5, 0.5, "No cleaned responses", ha='center', va='center', transform=ax_bar_plot.transAxes, fontsize=BAR_PLOT_YLABEL_FONTSIZE_DISTINCT, color='grey')
+                             ax_bar_plot.axis("off")
+                        else:
+                            generate_response_percentage_barplot_local(top_n_words_bar_plot, current_cleaned_responses_bar_plot, ax_bar_plot, base_color_plot)
+                        
+                        # No title on subplot for bar if wordclouds are off
+
+                fig_plot.subplots_adjust(left=0, bottom=0.08 if n_methods_plot > 0 else 0.05, right=1, top=1, wspace=0.2, hspace=0.1 if GENERATE_WORDCLOUDS_DISTINCT else 0)
+
+                if n_methods_plot > 0: # Add method labels at bottom
+                    for c_idx_label, method_label in enumerate(METHODS_DISTINCT):
+                        ax_for_label_pos = axes_plot[0, c_idx_label]
+                        pos_label = ax_for_label_pos.get_position()
+                        center_x_fig_coords = pos_label.x0 + pos_label.width / 2.0
+                        y_pos_label_fig_coords = 0.0 # Bottom of the figure
+                        display_method_label = METHOD_DISPLAY_NAME_MAPPING_DISTINCT.get(method_label, method_label)
+                        fig_plot.text(center_x_fig_coords, y_pos_label_fig_coords, display_method_label,
+                                 va='bottom', ha='center', # Adjusted va
+                                 fontsize=METHOD_LABEL_FONTSIZE_DISTINCT, transform=fig_plot.transFigure) # Use figure transform
+
+                config.PLOTS_DIR.mkdir(parents=True, exist_ok=True)
+                model_prefix_for_filename = MODELS_ABBR_DISTINCT[0] if len(MODELS_ABBR_DISTINCT) == 1 else "multi_model"
+                plot_type_filename_suffix = "combined" if GENERATE_WORDCLOUDS_DISTINCT else "barcharts_only"
+                # Versioning in filename for easier tracking
+                output_filename_base_plot = f"{model_prefix_for_filename}_{MAX_WORDS_CLOUD_DISTINCT}wc_{MAX_WORDS_BAR_DISTINCT}bar_{plot_type_filename_suffix}_v_refactored"
+                
+                output_filepath_plot_png = config.PLOTS_DIR / f"{output_filename_base_plot}.png"
+                output_filepath_plot_pdf = config.PLOTS_DIR / f"{output_filename_base_plot}.pdf" # Example for PDF
+
+                try:
+                    plt.savefig(output_filepath_plot_png, dpi=300, bbox_inches='tight')
+                    logger.info(f"Combined plot saved to {output_filepath_plot_png}")
+                    # plt.savefig(output_filepath_plot_pdf, dpi=300, bbox_inches='tight') # Optionally save PDF
+                    # logger.info(f"Combined plot saved to {output_filepath_plot_pdf}")
+                except Exception as e_save_plot:
+                    logger.error(f"Error saving combined plot figure: {e_save_plot}", exc_info=True)
+                plt.close(fig_plot)
+                logger.info("Combined plot figure closed.")
+
+    logger.info("--- Distinct Words Script Execution Finished ---")
+
+if __name__ == "__main__":
+    main()

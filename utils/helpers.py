@@ -404,6 +404,21 @@ def get_macro_f1_from_counts(score_counts: Dict[str, int]) -> float:
     macro_f1 = (f1_pos + f1_neg) / 2.0
     return macro_f1
 
+# Add to utils/helpers.py
+def load_scores_csv_to_dataframe(score_file_path: Path) -> pd.DataFrame:
+    if not score_file_path.is_file():
+        logger.warning(f"Score CSV file not found: {score_file_path}")
+        return pd.DataFrame() # Return empty DataFrame
+    try:
+        df = pd.read_csv(score_file_path, index_col=0) # Assumes index is method-n combo
+        # The CSV typically has one column, e.g., 'macro_f1' or just values
+        # The original script reads header=None, index_col=0, then df.loc[target_idx, 1]
+        # This helper should probably just return the raw df.
+        return df
+    except Exception as e:
+        logger.error(f"Error reading score CSV {score_file_path}: {e}", exc_info=True)
+        return pd.DataFrame()
+
 # --- Data Loading ---
 def load_dataset_csv_mapping(file_path: Union[str, Path], image_col: str, subset_col: str, label_col: Union[str, None] = None, real_label_value: Union[str, None] = None) -> Dict[str, str]:
     file_path = Path(file_path) # Ensure Path object

@@ -2,7 +2,9 @@
 
 ## Overview
 
-[Briefly describe your project: What problem does it solve? What is the main contribution? What are the key findings if it's a research project? (e.g., This repository contains the code and experimental results for the paper "Task-aligned prompting improves zero-shot detection of AI-generated images by Vision-Language Models". We explore methods to enhance the ability of Vision-Language Models (VLMs) to distinguish between real and AI-generated images in a zero-shot setting.)]
+This repository contains the code and experimental results for the paper "Task-aligned prompting improves zero-shot detection of AI-generated images by Vision-Language Models". We explore methods to enhance the ability of Vision-Language Models (VLMs) to distinguish between real and AI-generated images in a zero-shot setting. Our findings indicate that task-aligned prompting significantly improves detection performance.
+
+*(Please replace the above paragraph with a more detailed description of your project, its specific contributions, and key findings if different.)*
 
 ## Table of Contents
 
@@ -14,30 +16,41 @@
   - [3. Install Dependencies](#3-install-dependencies)
   - [4. Download NLTK Resources](#4-download-nltk-resources)
   - [5. Data Preparation](#5-data-preparation)
+- [Configuration](#configuration)
 - [Usage](#usage)
-  - [Configuration](https://www.google.com/search?q=%23configuration)
   - [Running Experiments](#running-experiments)
-    - [Example: Evaluating Qwen 2.5 7B on GenImage](#example-evaluating-qwen-25-7b-on-genimage)
+    - [Example: Evaluating Qwen2.5 7B on GenImage (2k sample)](#example-evaluating-qwen25-7b-on-genimage-2k-sample)
   - [Generating Result Tables and Plots](#generating-result-tables-and-plots)
-    - [Example: Generating the scaling consistency plot](#example-generating-the-scaling-consistency-plot)
-  - [Downloading and Preprocessing D3 Dataset Images](#downloading-and-preprocessing-d3-dataset-images)
+    - [Example: Generating the Scaling Consistency Plot](#example-generating-the-scaling-consistency-plot)
+  - [Downloading and Preprocessing D3 Dataset Images](https://www.google.com/search?q=%23downloading-and-preprocessing-d3-dataset-images)
 - [Expected Outputs](#expected-outputs)
 - [Troubleshooting](#troubleshooting)
 - [License](#license)
 - [Citation](#citation)
 - [Contributing](#contributing)
 - [Acknowledgements](#acknowledgements)
+- [Changelog](#changelog)
 
 ## Repository Structure
 
-Provide a brief overview of the main directories and their purpose:
 ```
 
 Zero-shot-s2/
+├── config.py            \# Central configuration for paths and global parameters
+├── data/                \# Placeholder for input datasets (managed via .gitignore)
+│   ├── D3/              \# D3 dataset images and metadata CSV
+│   ├── DF40/            \# DF40 dataset CSVs
+│   ├── genimage/        \# GenImage dataset CSVs
+│   └── FACES/           \# FACES dataset images
 ├── experiments/         \# Scripts for running evaluations and data processing
 │   ├── evaluate\_AI\_llama.py
 │   ├── evaluate\_AI\_qwen.py
 │   └── load\_d3.py
+├── outputs/             \# Default location for generated results, plots, tables
+│   ├── responses/       \# Raw model responses and rationales (JSONL)
+│   ├── scores/          \# Evaluation scores (JSON, CSV)
+│   ├── plots/           \# Generated plots (PNG, PDF)
+│   └── tables/          \# Generated LaTeX tables (.tex)
 ├── results/             \# Scripts for generating tables and plots from experiment outputs
 │   ├── combine\_tables.py
 │   ├── distinct\_words.py
@@ -47,48 +60,40 @@ Zero-shot-s2/
 │   ├── prompt\_table.py
 │   ├── recall\_subsets\_table.py
 │   └── scaling\_consistency.py
-├── data/                \# Placeholder for input data (not committed, managed via .gitignore)
-│   ├── D3/
-│   ├── DF40/
-│   └── genimage/
-├── outputs/             \# Placeholder for generated results, plots, tables (some may be cached here)
-│   ├── responses/
-│   ├── scores/
-│   ├── plots/
-│   └── tables/
-├── utils/               \# (Suggested) Utility scripts and shared functions
-├── config/              \# (Suggested) Configuration files
-├── .gitignore
-├── LICENSE.md           \# (To be added)
-├── README.md
-└── requirements.txt     \# (To be added)
+├── utils/               \# Utility scripts and shared helper functions
+│   └── helpers.py       \# Core helper functions for data loading, evaluation, etc.
+├── .gitignore           \# Specifies intentionally untracked files (e.g., large data files)
+├── LICENSE.md           \# Project license (To be added)
+├── README.md            \# This file
+└── requirements.txt     \# Python dependencies
 
 ````
 
 ## Prerequisites
 
-* Python (specify version, e.g., 3.8+)
-* pip (Python package installer)
+* Python (e.g., 3.8+ recommended, verify based on `requirements.txt`)
+* `pip` (Python package installer)
 * (Optional) Conda for environment management
-* (Optional) NVIDIA GPU with CUDA installed for model inference (specify CUDA version if critical)
+* (Optional but Recommended for speed) NVIDIA GPU with CUDA installed for model inference (refer to PyTorch and Transformers documentation for compatible CUDA versions).
 
 ## Setup
 
 ### 1. Clone the Repository
+
 ```bash
-git clone https://github.com/Zoher15/Zero-shot-s2.git
+git clone [https://github.com/Zoher15/Zero-shot-s2.git](https://github.com/Zoher15/Zero-shot-s2.git)
 cd Zero-shot-s2
 ````
 
 ### 2\. Create a Virtual Environment
 
-It is highly recommended to use a virtual environment.
+It is highly recommended to use a virtual environment to manage dependencies.
 
 **Using `venv`:**
 
 ```bash
 python -m venv venv
-source venv/bin/activate  # On Windows use `venv\Scripts\activate`
+source venv/bin/activate  # On Windows use: venv\Scripts\activate
 ```
 
 **Using `conda`:**
@@ -100,7 +105,7 @@ conda activate zeroshot_s2
 
 ### 3\. Install Dependencies
 
-[We will create a `requirements.txt` file in the next step. Once created, the instruction will be:]
+Install the required Python packages using the provided `requirements.txt` file:
 
 ```bash
 pip install -r requirements.txt
@@ -108,58 +113,65 @@ pip install -r requirements.txt
 
 ### 4\. Download NLTK Resources
 
-Some scripts (e.g., `results/distinct_words.py`) require NLTK resources. The script attempts to download them if not found, but you can also pre-download them:
+Some scripts (e.g., `results/distinct_words.py`) require NLTK resources like WordNet and stopwords. The `utils/helpers.py` script attempts to download them if not found, but you can also pre-download them:
 
 ```bash
 python -m nltk.downloader wordnet stopwords punkt
 ```
 
-Or run the `results/distinct_words.py` script once, which has a built-in checker.
+Alternatively, running a script like `results/distinct_words.py` once will trigger the automatic download if resources are missing.
 
 ### 5\. Data Preparation
 
-This project requires several datasets. Due to their size, they are not included in the repository. You need to download them and organize them as follows (or update paths in the configuration, see [Configuration](https://www.google.com/search?q=%23configuration) section):
+This project requires several datasets. Due to their size, they are not included directly in the repository. You need to download them and organize them according to the structure defined in `config.py`. By default, scripts expect datasets to be in the `Zero-shot-s2/data/` directory.
+
+The expected structure within `data/` is:
 
 ```
 Zero-shot-s2/
 └── data/
-    ├── D3/                      # Directory for D3 images (see experiments/load_d3.py)
-    │   └── D3_2k_sample.csv     # Example CSV for D3 image URLs
+    ├── D3/
+    │   └── D3_2k_sample.csv     # CSV for D3 image URLs (actual images downloaded by load_d3.py)
+    │   └── (images will be saved here by load_d3.py)
     ├── DF40/
     │   ├── 10k_sample_df40.csv
     │   └── 2k_sample_df40.csv
     ├── genimage/
     │   ├── 10k_random_sample.csv
     │   └── 2k_random_sample.csv
-    └── FACES/                   # For FACES dataset if used by evaluate_AI_qwen.py/llama.py
+    └── FACES/
         ├── LD_raw_512Size/
         ├── StyleGAN_raw_512size/
         └── Real_512Size/
-
 ```
 
-  * **D3 Dataset:** The `experiments/load_d3.py` script is used to download images based on a CSV file (e.g., `D3_2k_sample.csv`) containing image URLs.
-  * **Other Datasets (DF40, GenImage, FACES):** Place the respective CSV files and image directories as shown.
-  * **Large data files/directories within `data/` should be added to your `.gitignore` file.**
+  * **D3 Dataset**:
+      * Place the CSV file (e.g., `D3_2k_sample.csv` as specified in `config.D3_CSV_FILE`) in the `data/D3/` directory.
+      * Use the `experiments/load_d3.py` script (see [Downloading and Preprocessing D3 Dataset Images](https://www.google.com/search?q=%23downloading-and-preprocessing-d3-dataset-images)) to download the actual images.
+  * **Other Datasets (DF40, GenImage, FACES)**:
+      * Place the respective CSV files and image directories as shown above. The specific filenames for CSVs are defined in `config.py` (e.g., `config.GENIMAGE_2K_CSV_FILE`).
+  * **Large Data Files**: Large data files and directories within `data/` (like image folders) should be added to your local `.gitignore` file if they are not already, to prevent accidental versioning. The provided `.gitignore` may already cover common patterns.
 
-[Add specific download links or instructions for each dataset if available/permissible.]
+*(Consider adding specific download links or detailed instructions for acquiring each dataset if publicly available and permissible.)*
+
+## Configuration
+
+This project uses a central `config.py` file located at the root of the repository to manage all important paths and global parameters.
+
+  * **Paths**: All input data paths (e.g., `config.DATA_DIR`, `config.D3_CSV_FILE`), output paths (`config.OUTPUTS_DIR`, `config.RESPONSES_DIR`, `config.PLOTS_DIR`), and cache paths (`config.CACHE_DIR`) are defined here.
+  * **Parameters**: Some global evaluation parameters, like `config.EVAL_QUESTION_PHRASE`, are also set in `config.py`.
+
+If you organize your data differently or want to change output locations, you should primarily modify the relevant path variables in `config.py`. There should be no need to change hardcoded paths within individual scripts.
 
 ## Usage
 
-### Configuration
-
-Many scripts use hardcoded paths and parameters. In future versions, these will be moved to a central configuration system. For now, you might need to adjust paths at the top of individual scripts if your data is not in the default locations mentioned under "Data Preparation".
-
-Key scripts and their primary data/output locations:
-
-  * Evaluation scripts (`experiments/evaluate_AI_*.py`) save rationales and scores to paths like `/data3/zkachwal/visual-reasoning/data/ai-generation/responses/` and `/data3/zkachwal/visual-reasoning/data/ai-generation/scores/`. These should ideally be configured to save under the project's `outputs/` directory.
-  * Result generation scripts (`results/*.py`) often read from these locations and may save plots/tables to the `results/` directory itself or subdirectories (e.g., `results/f1_cache_plot/`).
+All scripts should be run from the root directory of the repository (`Zero-shot-s2/`).
 
 ### Running Experiments
 
-The `experiments` directory contains scripts to run evaluations.
+The `experiments/` directory contains scripts to run evaluations on different models and datasets. These scripts use `utils/helpers.py` for argument parsing, data loading, and saving results, and `config.py` for path management.
 
-**Example: Evaluating Qwen 2.5 7B on the GenImage dataset (2k sample)**
+**Example: Evaluating Qwen2.5 7B on the GenImage dataset (2k sample)**
 
 ```bash
 python experiments/evaluate_AI_qwen.py \
@@ -171,84 +183,117 @@ python experiments/evaluate_AI_qwen.py \
     -m zeroshot-2-artifacts
 ```
 
-  * `-llm`: Model name (e.g., `qwen25-7b`, `llama3-11b`).
-  * `-c`: CUDA device ID.
-  * `-d`: Dataset (e.g., `genimage`, `genimage2k`, `d3`, `d32k`, `df40`, `df402k`, `faces`).
-  * `-b`: Batch size.
-  * `-n`: Number of sequences for the model.
-  * `-m`: Mode of reasoning (e.g., `zeroshot`, `zeroshot-cot`, `zeroshot-2-artifacts`).
+**Common Arguments for Evaluation Scripts:**
 
-Refer to the `argparse` section within each evaluation script for all available options.
+  * `-llm` or `--llm`: Model identifier (e.g., `qwen25-7b`, `llama3-11b`). Refer to the `model_dict` within the respective evaluation script for available models.
+  * `-c` or `--cuda`: CUDA device ID(s) (e.g., `0`, or `0,1` for multiple GPUs, though multi-GPU support depends on the script's implementation).
+  * `-d` or `--dataset`: Dataset identifier (e.g., `genimage`, `genimage2k`, `d3`, `d32k`, `df40`, `df402k`, `faces`). These keys map to data loading routines and paths defined in `config.py` and `utils/helpers.py`.
+  * `-b` or `--batch_size`: Batch size for model inference.
+  * `-n` or `--num`: Number of sequences to generate (e.g., for self-consistency).
+  * `-m` or `--mode`: Mode of reasoning or prompting strategy (e.g., `zeroshot`, `zeroshot-cot`, `zeroshot-2-artifacts`).
+
+Refer to the `helpers.get_evaluation_args_parser()` function in `utils/helpers.py` and the `argparse` setup within each evaluation script for a complete list of options and their default values.
 
 ### Generating Result Tables and Plots
 
-The `results` directory contains scripts to process the output of experiments and generate tables/plots. Ensure that the experiment outputs (rationales, scores) are available in the locations these scripts expect (currently often hardcoded to `/data3/zkachwal/...`).
+The `results/` directory contains scripts to process the outputs of experiments (stored in `outputs/responses/` and `outputs/scores/`) and generate tables (to `outputs/tables/`) and plots (to `outputs/plots/`).
 
-**Example: Generating the scaling consistency plot**
-(Assumes `TARGET_LLAMA_MODEL_NAME = "llama3-11b"` and relevant rationale files are present)
+Ensure that the experiment outputs are available in the locations specified by `config.py` before running these scripts.
+
+**Example: Generating the Scaling Consistency Plot**
+(Assumes `TARGET_LLAMA_MODEL_NAME = "llama3-11b"` is set correctly in `results/scaling_consistency.py` or refactored to be configurable, and relevant rationale files from evaluations with varying `n` values are present in `outputs/responses/`)
 
 ```bash
 python results/scaling_consistency.py
 ```
 
-This will generate `self_consistency_scaling.png`.
+This will generate a plot like `self_consistency_scaling.png` in the `outputs/plots/` directory (path configured by `config.PLOTS_DIR`).
+
+*(For other result scripts, you may need to check their internal configurations or provide command-line arguments if they support them. Future work could standardize argument parsing for result scripts.)*
 
 ### Downloading and Preprocessing D3 Dataset Images
 
-The `experiments/load_d3.py` script downloads and saves images.
+The `experiments/load_d3.py` script is used to download and save images for the D3 dataset based on a CSV file containing image URLs.
 
 ```bash
 python experiments/load_d3.py \
-    --csv_filepath path/to/your/D3_sample.csv \
+    --csv_filepath data/D3/D3_2k_sample.csv \
     --save_directory data/D3/images \
     --timeout 15 \
     --force  # Optional: to overwrite existing images
     --verbose # Optional: for debug logging
 ```
 
-  * Update `--csv_filepath` and `--save_directory` as needed. The script will create the save directory if it doesn't exist.
-  * A log file `processing_log.log` will be created in the directory where the script is run.
+  * Update `--csv_filepath` if your D3 metadata CSV is named or located differently (default uses `config.D3_CSV_FILE`).
+  * Update `--save_directory` to specify where images should be saved (default uses `config.D3_DIR`). The script will create the save directory if it doesn't exist.
+  * A log file (`load_d3_processing.log` by default, path configured by `config.LOAD_D3_LOG_FILE`) will be created in the project root.
 
 ## Expected Outputs
 
-  * **Experiment Scripts:** Generate JSONL files with detailed rationales and JSON/CSV files with scores, typically saved to specified output directories (currently hardcoded).
-  * **Result Scripts:** Generate `.png` plots, `.tex` table files, or print tables to the console. These are usually saved in the `results/` directory or a subdirectory.
+  * **Experiment Scripts (`experiments/evaluate_AI_*.py`)**:
+      * Generate detailed rationale files (JSONL format) in the directory specified by `config.RESPONSES_DIR`.
+      * Generate score files (JSON for confusion matrix, CSV for Macro F1) in the directory specified by `config.SCORES_DIR`.
+  * **Result Scripts (`results/*.py`)**:
+      * Generate `.png` plot files in `config.PLOTS_DIR`.
+      * Generate `.tex` LaTeX table files in `config.TABLES_DIR`.
+      * Some scripts might print tables or summaries to the console.
+  * **Data Loading Scripts (`experiments/load_d3.py`)**:
+      * Download images to the specified save directory.
+      * Produce a log file detailing the download process.
 
 ## Troubleshooting
 
-  * **`FileNotFoundError`:**
-      * Double-check hardcoded paths in the scripts if you haven't configured a central path management system.
-      * Ensure your datasets are organized as specified in "Data Preparation".
-  * **`ModuleNotFoundError`:**
+  * **`FileNotFoundError`**:
+      * Ensure that all required dataset files (CSVs, image directories) are correctly placed as per the "Data Preparation" section and that paths in `config.py` point to them correctly.
+      * Verify that output directories specified in `config.py` are writable.
+  * **`ModuleNotFoundError`**:
       * Make sure your virtual environment is activated.
-      * Verify that all dependencies from `requirements.txt` are installed.
-  * **CUDA Errors / GPU Issues:**
-      * Ensure PyTorch is installed with the correct CUDA version matching your system's CUDA drivers.
-      * Check if the correct GPU is visible and selected (`-c` argument in evaluation scripts).
-  * **NLTK `LookupError`:**
-      * Run the NLTK resource download command (see Setup) or let the `distinct_words.py` script attempt the download.
+      * Verify that all dependencies from `requirements.txt` have been installed correctly (`pip install -r requirements.txt`).
+      * Ensure you are running scripts from the project's root directory (`Zero-shot-s2/`).
+  * **CUDA Errors / GPU Issues**:
+      * Ensure PyTorch is installed with the correct CUDA version matching your system's CUDA drivers and GPU architecture.
+      * Check if the correct GPU is visible and selected (e.g., via the `-c` argument in evaluation scripts or `CUDA_VISIBLE_DEVICES` environment variable).
+  * **NLTK `LookupError`**:
+      * Run the NLTK resource download command provided in the "Setup" section. Some scripts might also attempt to download these resources automatically if missing.
+  * **Incorrect File Paths in Scripts**:
+      * This should be minimal if `config.py` is used correctly. If you suspect a path issue within a script, verify it's using a variable from `config.py` rather than a hardcoded path.
 
 ## License
 
-[To be added. Choose a license, e.g., MIT, Apache 2.0, and add a `LICENSE.md` file.]
-Example: This project is licensed under the MIT License - see the [LICENSE.md](LICENSE.md) file for details.
+*(To be added. Choose a license, e.g., MIT, Apache 2.0, and add a `LICENSE.md` file. Example below assumes MIT License.)*
+
+This project is licensed under the MIT License - see the `LICENSE.md` file for details.
 
 ## Citation
 
 If you use this code or these findings in your research, please cite:
 
+```bibtex
+@misc{your_project_bibtex_key_2025,
+  author    = {Your Name(s)},
+  title     = {Task-aligned prompting improves zero-shot detection of AI-generated images by Vision-Language Models},
+  year      = {2025},
+  publisher = {GitHub},
+  journal   = {GitHub repository},
+  howpublished = {\url{[https://github.com/Zoher15/Zero-shot-s2](https://github.com/Zoher15/Zero-shot-s2)}}
+}
 ```
-[Your BibTeX entry here]
-```
+
+*(Please replace with your actual BibTeX entry when available.)*
 
 ## Contributing
 
-[Optional: Add guidelines for contributing if you welcome contributions.]
-Examples:
+We welcome contributions\! If you'd like to contribute, please follow these guidelines:
 
-  * Pull requests are welcome. For major changes, please open an issue first to discuss what you would like to change.
-  * Please make sure to update tests as appropriate.
+  * For major changes, please open an issue first to discuss what you would like to change.
+  * Ensure your code adheres to the project's coding style (consider using a linter/formatter like Black).
+  * Make sure to update documentation and tests as appropriate.
+  * Create a pull request with a clear description of your changes.
 
 ## Acknowledgements
 
-[Optional: Acknowledge any libraries, datasets, or individuals that helped your project.]
+*(Optional: Acknowledge any libraries, datasets, or individuals that significantly helped your project.)*
+
+## Changelog
+
+*(Consider maintaining a `CHANGELOG.md` file to document notable changes, new features, and bug fixes across different versions of the repository.)*

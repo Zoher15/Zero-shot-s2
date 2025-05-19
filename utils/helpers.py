@@ -216,27 +216,6 @@ def load_df40_data_examples(file_path: Union[str, Path], question_str: str) -> L
         examples.append(example_data)
     return examples
 
-def load_faces_data_examples(data_dir_path: Union[str, Path], question_str: str) -> List[Dict[str, Any]]:
-    """Loads FACES dataset examples from specified subdirectories."""
-    data_dir = Path(data_dir_path)
-    dirs_info = [("LD_raw_512Size", "ai-generated"),
-                 ("StyleGAN_raw_512size", "ai-generated"),
-                 ("Real_512Size", "real")]
-    examples = []
-    for dir_name, answer_label in dirs_info:
-        current_subdir = data_dir / dir_name
-        if not current_subdir.is_dir():
-            logger.warning(f"FACES subdirectory not found: {current_subdir}")
-            continue
-        for f_name in os.listdir(current_subdir):
-            # Consider adding checks for file extensions if needed (e.g., .png, .jpg)
-            examples.append({
-                'image': str(current_subdir / f_name.strip()),
-                'question': question_str,
-                'answer': answer_label
-            })
-    return examples
-
 
 def load_test_data(dataset_arg: str, config_module: Any, question_phrase: str) -> list:
     examples = []

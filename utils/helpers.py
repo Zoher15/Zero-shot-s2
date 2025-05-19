@@ -17,6 +17,135 @@ import nltk
 from nltk.corpus import stopwords
 from nltk import word_tokenize
 from nltk.stem import WordNetLemmatizer
+import argparse
+
+# In utils/helpers.py
+import os
+import torch
+from transformers import set_seed # Ensure this import is in helpers
+import pandas as pd
+
+def initialize_environment(cuda_devices_str: str, seed_value: int = 0):
+    os.environ["CUDA_VISIBLE_DEVICES"] = cuda_devices_str
+    set_seed(seed_value)
+    torch.manual_seed(seed_value)
+    if torch.cuda.is_available():
+        torch.cuda.manual_seed_all(seed_value) # Use manual_seed_all for multi-GPU
+    torch.backends.cudnn.deterministic = True
+    torch.backends.cudnn.benchmark = False
+    print(f"INFO: CUDA_VISIBLE_DEVICES set to '{cuda_devices_str}'")
+    print(f"INFO: Seeds set to {seed_value}")
+
+def save_evaluation_outputs(
+    rationales_data: list,
+    score_metrics: dict, # This is the TP, FP, TN, FN dict
+    macro_f1_score: float, # The final calculated macro_f1
+    model_prefix: str, # "AI_llama" or "AI_qwen"
+    dataset_name: str, # e.g., args.dataset
+    model_string: str, # e.g., args.llm
+    mode_type_str: str, # e.g., args.mode
+    num_sequences_val: int, # e.g., args.num
+    config_module: any
+):
+    config_module.RESPONSES_DIR.mkdir(parents=True, exist_ok=True)
+    config_module.SCORES_DIR.mkdir(parents=True, exist_ok=True)
+
+    base_filename_part = f"{model_prefix}-{dataset_name}-{model_string}-{mode_type_str}-n{num_sequences_val}"
+
+    rationales_filename = f"{base_filename_part}-rationales.jsonl"
+    rationales_file_path = config_module.RESPONSES_DIR / rationales_filename
+    try:
+        with open(rationales_file_path, 'w') as file:
+            json.dump(rationales_data, file, indent=4)
+        print(f"INFO: Rationales data saved to {rationales_file_path}")
+    except IOError as e:
+        print(f"ERROR: Could not save rationales to {rationales_file_path}: {e}")
+
+
+    scores_filename_json = f"{base_filename_part}-scores.json" # For confusion matrix
+    scores_file_path_json = config_module.SCORES_DIR / scores_filename_json
+    try:
+        with open(scores_file_path_json, 'w') as file:
+            json.dump(score_metrics, file, indent=4)
+        print(f"INFO: Confusion matrix data (JSON) saved to {scores_file_path_json}")
+    except IOError as e:
+        print(f"ERROR: Could not save confusion matrix to {scores_file_path_json}: {e}")
+
+    # Save the final macro F1 score to a CSV
+    # The original scripts saved a dict like {'zeroshot-cot-n1': 0.75}
+    # This helper can standardize it.
+    csv_scores_dict = {f'{mode_type_str}-n{num_sequences_val}': macro_f1_score}
+    scores_df = pd.DataFrame.from_dict(csv_scores_dict, orient='index', columns=['macro_f1'])
+
+    csv_scores_filename = f'{base_filename_part}-scores.csv' # For final macro F1
+    csv_file_path = config_module.SCORES_DIR / csv_scores_filename
+    try:
+        scores_df.to_csv(csv_file_path, index=True, header=True)
+        print(f"INFO: Macro F1 score CSV saved to {csv_file_path}")
+    except IOError as e:
+        print(f"ERROR: Could not save Macro F1 CSV to {csv_file_path}: {e}")
+
+def append_prompt_suffix_for_mode(prompt_text: str, mode_type: str) -> str:
+    suffixes = {
+        "zeroshot-cot": "Let's think step by step",
+        "zeroshot-visualize": "Let's visualize",
+        "zeroshot-examine": "Let's examine",
+        "zeroshot-pixel": "Let's examine pixel by pixel",
+        "zeroshot-zoom": "Let's zoom in",
+        "zeroshot-flaws": "Let's examine the flaws",
+        "zeroshot-texture": "Let's examine the textures",
+        "zeroshot-style": "Let's examine the style",
+        "zeroshot-artifacts": "Let's examine the synthesis artifacts",
+        "zeroshot-2-artifacts": "Let's examine the style and the synthesis artifacts",
+        "zeroshot-3-artifacts": "Let's examine the synthesis artifacts and the style",
+        "zeroshot-4-artifacts": "Let's observe the style and the synthesis artifacts",
+        "zeroshot-5-artifacts": "Let's inspect the style and the synthesis artifacts",
+        "zeroshot-6-artifacts": "Let's survey the style and the synthesis artifacts",
+        "zeroshot-7-artifacts": "Let's scrutinize the style and the synthesis artifacts",
+        "zeroshot-8-artifacts": "Let's analyze the style and the synthesis artifacts",
+        "zeroshot-9-artifacts": "Let's examine the details and the textures",
+    }
+    # Check for partial matches if mode_type can contain more (e.g. "zeroshot-cot-resize")
+    for key_suffix, text_suffix in suffixes.items():
+        if key_suffix in mode_type: # Allows mode_type to be like "zeroshot-cot-something"
+            prompt_text += f" {text_suffix}" # Add a space before suffix
+            break # Add only the first matched suffix if multiple could match.
+                 # Or, decide if multiple suffixes can be chained.
+    return prompt_text
+
+def load_test_data(dataset_arg: str, config_module: any, question_phrase: str) -> list:
+    """Loads test data based on the dataset argument."""
+    examples = []
+    if 'genimage' in dataset_arg:
+        file_path = config_module.GENIMAGE_2K_CSV_FILE if '2k' in dataset_arg else config_module.GENIMAGE_10K_CSV_FILE
+        # This function needs to exist in helpers and return the 'examples' list
+        examples = helpers.load_genimage_data_examples(file_path, question_phrase)
+    elif 'd3' in dataset_arg:
+        # This function needs to exist in helpers and return the 'examples' list
+        examples = helpers.load_d3_data_examples(config_module.D3_DIR, question_phrase)
+    elif 'df40' in dataset_arg:
+        file_path = config_module.DF40_2K_CSV_FILE if '2k' in dataset_arg else config_module.DF40_10K_CSV_FILE
+        # This function needs to exist in helpers and return the 'examples' list
+        examples = helpers.load_df40_data_examples(file_path, question_phrase)
+    else:
+        print(f"Error: Dataset '{dataset_arg}' not recognized for path configuration in helpers.load_test_data.")
+        sys.exit(1)
+
+    random.seed(0) # Ensure consistent shuffling if done here
+    random.shuffle(examples)
+    print(f"INFO: Loaded and shuffled {len(examples)} examples for dataset '{dataset_arg}'.")
+    return examples
+
+def get_evaluation_args_parser():
+    parser = argparse.ArgumentParser(description="Vision-Language Model Evaluation Script")
+    parser.add_argument("-m", "--mode", type=str, help="Mode of reasoning", default="zeroshot-2-artifacts")
+    parser.add_argument("-llm", "--llm", type=str, help="The name of the model", required=True) # Make llm required
+    parser.add_argument("-c", "--cuda", type=str, help="CUDA device IDs (e.g., '0' or '0,1')", default="0")
+    parser.add_argument("-d", "--dataset", type=str, help="Dataset to use (e.g., 'genimage2k')", required=True) # Make dataset required
+    parser.add_argument("-b", "--batch_size", type=int, help="Batch size for model inference", default=10)
+    parser.add_argument("-n", "--num", type=int, help="Number of sequences for self-consistency/sampling", default=1)
+    # Add any other common arguments here
+    return parser
 
 # --- NLTK Resource Management ---
 def check_nltk_resource(resource_id: str, download_name: Union[str, None] = None) -> None:

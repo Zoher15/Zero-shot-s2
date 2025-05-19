@@ -61,19 +61,6 @@ def capitalize_first_letter(text):
         return text[0].upper() + text[1:]
     return text
 
-# data loader function
-def load_faces_data(data_dir, question):
-    dirs = [("LD_raw_512Size", "ai-generated"), ("StyleGAN_raw_512size", "ai-generated"), ("Real_512Size", "real")]
-    examples = []
-    for dir_name, answer in dirs: # Renamed 'dir' to 'dir_name' to avoid shadowing built-in
-        for f in os.listdir(os.path.join(data_dir, dir_name)):
-            data = {}
-            data['image'] = os.path.join(data_dir, dir_name, f.strip())
-            data['question'] = question
-            data['answer'] = answer
-            examples.append(data)
-    return examples
-
 def load_genimage_data(file, question):
     data = pd.read_csv(file)
     examples = []

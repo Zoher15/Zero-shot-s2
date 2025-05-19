@@ -40,8 +40,7 @@ Zero-shot-s2/
 ├── data/                \# Placeholder for input datasets (managed via .gitignore)
 │   ├── D3/              \# D3 dataset images and metadata CSV
 │   ├── DF40/            \# DF40 dataset CSVs
-│   ├── genimage/        \# GenImage dataset CSVs
-│   └── FACES/           \# FACES dataset images
+│   └── genimage/        \# GenImage dataset CSVs
 ├── experiments/         \# Scripts for running evaluations and data processing
 │   ├── evaluate\_AI\_llama.py
 │   ├── evaluate\_AI\_qwen.py
@@ -136,20 +135,16 @@ Zero-shot-s2/
     ├── DF40/
     │   ├── 10k_sample_df40.csv
     │   └── 2k_sample_df40.csv
-    ├── genimage/
-    │   ├── 10k_random_sample.csv
-    │   └── 2k_random_sample.csv
-    └── FACES/
-        ├── LD_raw_512Size/
-        ├── StyleGAN_raw_512size/
-        └── Real_512Size/
+    └── genimage/
+        ├── 10k_random_sample.csv
+        └── 2k_random_sample.csv
 ```
 
   * **D3 Dataset**:
       * Place the CSV file (e.g., `D3_2k_sample.csv` as specified in `config.D3_CSV_FILE`) in the `data/D3/` directory.
       * Use the `experiments/load_d3.py` script (see [Downloading and Preprocessing D3 Dataset Images](https://www.google.com/search?q=%23downloading-and-preprocessing-d3-dataset-images)) to download the actual images.
-  * **Other Datasets (DF40, GenImage, FACES)**:
-      * Place the respective CSV files and image directories as shown above. The specific filenames for CSVs are defined in `config.py` (e.g., `config.GENIMAGE_2K_CSV_FILE`).
+  * **Other Datasets (DF40, GenImage)**:
+      * Place the respective CSV files in their designated directories as shown above. The specific filenames for CSVs are defined in `config.py` (e.g., `config.GENIMAGE_2K_CSV_FILE`). The image paths within these CSVs should be relative to a common base or be absolute paths that your system can access.
   * **Large Data Files**: Large data files and directories within `data/` (like image folders) should be added to your local `.gitignore` file if they are not already, to prevent accidental versioning. The provided `.gitignore` may already cover common patterns.
 
 *(Consider adding specific download links or detailed instructions for acquiring each dataset if publicly available and permissible.)*
@@ -187,7 +182,7 @@ python experiments/evaluate_AI_qwen.py \
 
   * `-llm` or `--llm`: Model identifier (e.g., `qwen25-7b`, `llama3-11b`). Refer to the `model_dict` within the respective evaluation script for available models.
   * `-c` or `--cuda`: CUDA device ID(s) (e.g., `0`, or `0,1` for multiple GPUs, though multi-GPU support depends on the script's implementation).
-  * `-d` or `--dataset`: Dataset identifier (e.g., `genimage`, `genimage2k`, `d3`, `d32k`, `df40`, `df402k`, `faces`). These keys map to data loading routines and paths defined in `config.py` and `utils/helpers.py`.
+  * `-d` or `--dataset`: Dataset identifier (e.g., `genimage`, `genimage2k`, `d3`, `d32k`, `df40`, `df402k`). These keys map to data loading routines and paths defined in `config.py` and `utils/helpers.py`.
   * `-b` or `--batch_size`: Batch size for model inference.
   * `-n` or `--num`: Number of sequences to generate (e.g., for self-consistency).
   * `-m` or `--mode`: Mode of reasoning or prompting strategy (e.g., `zeroshot`, `zeroshot-cot`, `zeroshot-2-artifacts`).
@@ -218,7 +213,7 @@ The `experiments/load_d3.py` script is used to download and save images for the 
 ```bash
 python experiments/load_d3.py \
     --csv_filepath data/D3/D3_2k_sample.csv \
-    --save_directory data/D3/images \
+    --save_directory data/D3 \
     --timeout 15 \
     --force  # Optional: to overwrite existing images
     --verbose # Optional: for debug logging
@@ -238,7 +233,7 @@ python experiments/load_d3.py \
       * Generate `.tex` LaTeX table files in `config.TABLES_DIR`.
       * Some scripts might print tables or summaries to the console.
   * **Data Loading Scripts (`experiments/load_d3.py`)**:
-      * Download images to the specified save directory.
+      * Download images to the specified save directory (e.g., `data/D3/`).
       * Produce a log file detailing the download process.
 
 ## Troubleshooting

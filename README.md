@@ -76,7 +76,7 @@ Zero-shot-s2/
 
 ### 1. Clone the Repository
 ```bash
-git clone https://your-repo-url/Zero-shot-s2.git
+git clone https://github.com/Zoher15/Zero-shot-s2.git
 cd Zero-shot-s2
 ````
 

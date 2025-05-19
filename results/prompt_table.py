@@ -5,17 +5,19 @@ import io
 import re
 import numpy as np
 import sys
-from collections import defaultdict
-from sklearn.metrics import f1_score # For Macro F1 calculation (kept if direct F1 calc is ever re-added)
+from pathlib import Path # <--- ADD
+
+# Assuming config.py is in the project root (parent of 'results')
+project_root = Path(__file__).resolve().parent.parent
+sys.path.append(str(project_root))
+import config # <--- ADD
 
 # --- Seed for reproducibility ---
 np.random.seed(0)
 
 # --- Configuration ---
-# SCORES_DIR: Directory where the .csv score files are located.
-SCORES_DIR = '/data3/zkachwal/visual-reasoning/data/ai-generation/scores/'
-# CI_CACHE_DIR_TABLE: Directory to store/load F1 score results. NOTE: Caching is currently disabled in this version.
-CI_CACHE_DIR_TABLE = "./f1_cache_prompt_table/" # This directory will not be used if caching is disabled.
+SCORES_DIR = config.SCORES_DIR # <--- CHANGED
+CI_CACHE_DIR_TABLE = config.PROMPT_TABLE_CACHE_DIR # <--- CHANGED
 TARGET_MODEL_NAME = "qwen25-7b"
 
 # --- Category Definition Function (Updated based on user's final table structure) ---
@@ -212,7 +214,7 @@ def load_data_and_calculate_scores(scores_dir_path, model_to_load, allowed_datas
             stats["files_checked"] += 1
             score, n_s = None, 0 
             
-            prefix = "AI_util" if "llama" in model_to_load.lower() else "AI_dev"
+            prefix = "AI_llama" if "llama" in model_to_load.lower() else "AI_qwen"
             fname_csv = f"{prefix}-{dataset_name_table}-{model_to_load}-{method_key}-n{n_val_param}-wait{wait_val_param}-scores.csv"
             fpath_csv = os.path.join(scores_dir_path, fname_csv)
 
@@ -525,11 +527,16 @@ if __name__ == "__main__":
 
     full_latex_output += "\n% \\end{document}\n"
 
-    combined_output_filename = f"{TARGET_MODEL_NAME.replace('.', '_')}_combined_tables.tex"
+    # Ensure the TABLES_DIR from config exists
+    config.TABLES_DIR.mkdir(parents=True, exist_ok=True) # <--- ADD DIRECTORY CREATION
+
+    combined_output_filename_only = f"{TARGET_MODEL_NAME.replace('.', '_')}_combined_prompt_tables.tex" # Or a more descriptive name
+    combined_output_filepath = config.TABLES_DIR / combined_output_filename_only # <--- CONSTRUCT FULL PATH
+
     try:
-        with open(combined_output_filename, 'w', encoding='utf-8') as f:
+        with open(combined_output_filepath, 'w', encoding='utf-8') as f: # <--- USE combined_output_filepath
             f.write(full_latex_output)
-        print(f"\nCombined LaTeX code for both tables saved to: {combined_output_filename}")
+        print(f"\nCombined LaTeX code for both tables saved to: {combined_output_filepath}") # <--- USE combined_output_filepath
     except IOError as e:
         print(f"\nError saving combined LaTeX file: {e}", file=sys.stderr)
 

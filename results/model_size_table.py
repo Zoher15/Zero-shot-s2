@@ -5,16 +5,20 @@ import re
 import numpy as np
 import sys
 from collections import defaultdict
-# sklearn.metrics.f1_score is no longer needed as scores are read from CSV
+from pathlib import Path # <--- ADD
+
+# Assuming config.py is in the project root (parent of 'results')
+project_root = Path(__file__).resolve().parent.parent
+sys.path.append(str(project_root))
+import config # <--- ADD
 
 # --- Seed for reproducibility ---
 np.random.seed(0)
 
 # --- Configuration ---
-# SCORES_DIR: Directory where the .csv score files are located.
-SCORES_DIR = '/data3/zkachwal/visual-reasoning/data/ai-generation/scores/' # Please update this path if necessary
-# CACHE_DIR: This directory will not be actively used as caching is disabled for CSV loading.
-CACHE_DIR = "./csv_score_cache_unused/" 
+SCORES_DIR = config.SCORES_DIR # <--- CHANGED
+# Update CACHE_DIR to use the one from config, even if currently unused
+CACHE_DIR = config.CACHE_DIR # <--- CHANGED 
 
 # Define all models to be included (for parsing and potential other uses)
 # "CoDE" removed from this list
@@ -167,10 +171,10 @@ def load_scores_from_csvs(scores_dir_path, all_models_to_load, allowed_datasets_
                 stats["files_checked"] += 1
                 score, n_s = None, 0  
 
-                prefix = "AI_util" if "llama" in model_name.lower() else "AI_dev"
+                prefix = "AI_llama" if "llama" in model_name.lower() else "AI_qwen"
                 
                 if model_name == CODE_MODEL_NAME: 
-                    prefix = "AI_dev" 
+                    prefix = "AI_qwen" 
                     fname_csv = f"{prefix}-{dataset_name_table}-{model_name}-scores.csv"
                 else:
                     fname_csv = f"{prefix}-{dataset_name_table}-{model_name}-{method_key}-n{n_val_param}-wait{wait_val_param}-scores.csv"
@@ -439,13 +443,18 @@ if __name__ == "__main__":
     print(latex_output_main)
     print("="*70)
 
-    output_filename_main = "qwen25_prompt_effects_table.tex" 
+    # Ensure the TABLES_DIR from config exists
+    config.TABLES_DIR.mkdir(parents=True, exist_ok=True) # <--- ADD DIRECTORY CREATION
+
+    output_filename_only = "qwen25_prompt_effects_table.tex" # Keep the base filename
+    output_filepath_main = config.TABLES_DIR / output_filename_only # <--- CONSTRUCT FULL PATH
+
     try:
-        with open(output_filename_main, 'w', encoding='utf-8') as f:
+        with open(output_filepath_main, 'w', encoding='utf-8') as f: # <--- USE output_filepath_main
             f.write(latex_output_main)
-        print(f"\nLaTeX table code saved to: {output_filename_main}")
+        print(f"\nLaTeX table code saved to: {output_filepath_main}") # <--- USE output_filepath_main
     except IOError as e:
-        print(f"\nError saving LaTeX to file {output_filename_main}: {e}", file=sys.stderr)
+        print(f"\nError saving LaTeX to file {output_filepath_main}: {e}", file=sys.stderr)
 
     print("\nNotes:")
     print(r"- Scores are Macro F1 (%) read directly from CSV files.")

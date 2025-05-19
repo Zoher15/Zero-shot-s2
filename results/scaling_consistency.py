@@ -6,15 +6,17 @@ import matplotlib.pyplot as plt
 import matplotlib.ticker as ticker # Imported for Y-axis tick formatting
 from sklearn.metrics import f1_score
 import sys
+from pathlib import Path
+project_root = Path(__file__).resolve().parent.parent
+sys.path.append(str(project_root))
+import config
 
 # --- Configuration ---
-# IMPORTANT: Update this path to your actual responses directory
-RESPONSES_DIR = '/data3/zkachwal/visual-reasoning/data/ai-generation/responses/'
+# Use paths from config.py
+RESPONSES_DIR = config.RESPONSES_DIR 
+F1_PLOT_CACHE_DIR = config.F1_PLOT_CACHE_DIR 
 # IMPORTANT: Update this to the exact model name string used in your filenames for Llama 3
-TARGET_LLAMA_MODEL_NAME = "llama3-11b" 
-
-# Directory to store/load F1 score results for this plotting script
-F1_PLOT_CACHE_DIR = "./f1_cache_plot/"
+TARGET_LLAMA_MODEL_NAME = "llama3-11b"
 
 # N values to plot on the x-axis (for data fetching and ticks)
 N_VALUES = [1, 5, 10, 20]
@@ -116,7 +118,7 @@ def get_f1_score(model_name, dataset_name, method_key, n_val, wait_val):
         except Exception as e:
             print(f"  CACHE ERROR reading {fpath_cache}: {e}. Recalculating.", file=sys.stderr)
 
-    prefix = "AI_util" if "llama" in model_name.lower() else "AI_dev"
+    prefix = "AI_llama" if "llama" in model_name.lower() else "AI_qwen"
     fname_rationale = f"{prefix}-{dataset_name}-{model_name}-{method_key}-n{str(n_val)}-wait{wait_val}-rationales.jsonl"
     fpath_rationale = os.path.join(RESPONSES_DIR, fname_rationale)
     score = None
@@ -300,14 +302,17 @@ def main():
     
     plt.tight_layout(rect=[0, 0.0, 1, 0.92]) 
 
-    output_filename = f"self_consistency_scaling.png" 
+    # Ensure the PLOTS_DIR from config exists
+    config.PLOTS_DIR.mkdir(parents=True, exist_ok=True) # <--- ADD DIRECTORY CREATION
+
+    output_filename = "self_consistency_scaling.png" # Keep the filename the same
+    output_filepath = config.PLOTS_DIR / output_filename # <--- CONSTRUCT FULL PATH
+
     try:
-        plt.savefig(output_filename, dpi=PLOT_DPI) 
-        print(f"\nPlot saved to: {output_filename}")
+        plt.savefig(output_filepath, dpi=PLOT_DPI, bbox_inches='tight') # <--- USE output_filepath
+        print(f"\nPlot saved to: {output_filepath}") # <--- USE output_filepath
     except Exception as e:
         print(f"\nError saving plot: {e}", file=sys.stderr)
-    
-    plt.show()
 
 if __name__ == "__main__":
     main()

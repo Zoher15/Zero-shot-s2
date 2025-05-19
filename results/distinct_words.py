@@ -7,6 +7,13 @@ import string # For punctuation removal
 from collections import Counter, defaultdict
 import pickle # For saving/loading processed data
 import colorsys # For color manipulation (HSL)
+from pathlib import Path # <--- ADD if not already there (it is used by config.py)
+import sys # <--- ADD
+
+# Assuming config.py is in the project root (parent of 'results')
+project_root = Path(__file__).resolve().parent.parent
+sys.path.append(str(project_root))
+import config # <--- ADD
 
 # NLTK setup for text processing
 import nltk
@@ -67,32 +74,12 @@ import numpy as np # For score normalization
 # --- Configuration ---
 
 # Data Paths
-RESPONSES_DIR_ORIGINAL = '/data3/zkachwal/visual-reasoning/data/ai-generation/responses/'
-if os.path.exists(RESPONSES_DIR_ORIGINAL):
-    RESPONSES_DIR = RESPONSES_DIR_ORIGINAL
-else:
-    print(f"Warning: Original RESPONSES_DIR '{RESPONSES_DIR_ORIGINAL}' not found.")
-    RESPONSES_DIR = './dummy_responses'
-    os.makedirs(RESPONSES_DIR, exist_ok=True)
-    print(f"Using dummy directory: '{RESPONSES_DIR}'")
-    DUMMY_MODELS = {'llama3.2': 'llama3-11b', 'qwen2.5': 'qwen25-7b'}
-    DUMMY_METHODS = ['zeroshot', 'zeroshot-cot', 'zeroshot-2-artifacts']
-    DUMMY_DATASETS = ['d3', 'df40', 'genimage']
-    for model_abbr_dummy, model_full_dummy in DUMMY_MODELS.items(): 
-        for method_dummy in DUMMY_METHODS: 
-            for dataset_dummy in DUMMY_DATASETS: 
-                file_prefix_dummy = "AI_util" if model_abbr_dummy == 'llama3.2' else "AI_dev"
-                file_name_dummy = f"{file_prefix_dummy}-{dataset_dummy}-{model_full_dummy}-{method_dummy}-n1-wait0-rationales.jsonl"
-                file_path_dummy = os.path.join(RESPONSES_DIR, file_name_dummy)
-                if not os.path.exists(file_path_dummy):
-                    dummy_content = json.dumps([{"rationales": ["dummy text one", "dummy text two", "example analysis", "feature", "visual", "element"]}])
-                    with open(file_path_dummy, 'w', encoding='utf-8') as f:
-                        f.write(dummy_content)
+# Data Paths
+RESPONSES_DIR = config.RESPONSES_DIR # <--- Primary responses directory from config
 
-# Path for aggregated data (token counts, raw responses map)
-PROCESSED_AGGREGATE_DATA_PATH = './processed_model_aggregate_data_v2.pkl'
-# Path for individual cleaned response data (sets of tokens per response)
-PROCESSED_INDIVIDUAL_RESPONSES_PATH = './response_cleaned_corpora_v2.pkl'
+# Update paths for processed data to use config.py variables
+PROCESSED_AGGREGATE_DATA_PATH = config.PROCESSED_AGGREGATE_DATA_PKL
+PROCESSED_INDIVIDUAL_RESPONSES_PATH = config.PROCESSED_INDIVIDUAL_RESPONSES_PKL
 
 
 # Models, Methods, and Datasets
@@ -516,6 +503,7 @@ if not agg_data_loaded or not individual_data_loaded:
         save_raw_responses = {k_model: {k_method: list_responses for k_method, list_responses in methods_data.items()} 
                               for k_model, methods_data in raw_responses_map.items()}
         save_agg_data = {'corpora': save_corpora, 'bg_counters': save_bg_counters, 'raw_responses': save_raw_responses}
+        config.CACHE_DIR.mkdir(parents=True, exist_ok=True) # <--- ADD
         with open(PROCESSED_AGGREGATE_DATA_PATH, 'wb') as f: pickle.dump(save_agg_data, f)
         print("Successfully saved aggregate processed data.")
     except Exception as e: print(f"Error saving aggregate processed data: {e}")
@@ -530,6 +518,7 @@ if not agg_data_loaded or not individual_data_loaded:
             }
             for model_key, methods_data in individual_processed_responses.items()
         }
+        config.CACHE_DIR.mkdir(parents=True, exist_ok=True)
         with open(PROCESSED_INDIVIDUAL_RESPONSES_PATH, 'wb') as f: pickle.dump(save_individual_data, f)
         print("Successfully saved individual cleaned responses data.")
     except Exception as e: print(f"Error saving individual cleaned responses data: {e}")
@@ -697,9 +686,14 @@ else:
         
         plot_type_suffix = "combined" if GENERATE_WORDCLOUDS else "barcharts_only"
         # Updated filename version
-        output_filename_combined_base = f"{model_prefix_fig}_{MAX_WORDS_CLOUD}wc_{MAX_WORDS_BAR}bar_{plot_type_suffix}_v5" 
-        output_filename_combined = f"{output_filename_combined_base}.png"
-        output_filename_combined_fallback = f"{output_filename_combined_base}_fallback.png"
+        # Ensure the PLOTS_DIR from config exists
+        config.PLOTS_DIR.mkdir(parents=True, exist_ok=True) # <--- ADD DIRECTORY CREATION
+
+        output_filename_combined_base = f"{model_prefix_fig}_{MAX_WORDS_CLOUD}wc_{MAX_WORDS_BAR}bar_{plot_type_suffix}_v5"
+
+        output_filename_combined = config.PLOTS_DIR / f"{output_filename_combined_base}.png" # <--- CHANGED
+        output_filename_combined_fallback = config.PLOTS_DIR / f"{output_filename_combined_base}_fallback.png" # <--- CHANGED
+
         try:
             plt.savefig(output_filename_combined, dpi=300, bbox_inches='tight')
             print(f"\nCombined plot generation complete. Saved to {output_filename_combined}")

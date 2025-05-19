@@ -1,5 +1,12 @@
 import json
 import os
+from pathlib import Path # <--- ADD
+import sys # <--- ADD
+
+# Assuming config.py is in the project root (parent of 'results')
+project_root = Path(__file__).resolve().parent.parent
+sys.path.append(str(project_root))
+import config # <--- ADD
 
 def load_scores_from_jsonl(file_path):
     """
@@ -121,21 +128,21 @@ def main():
     """
     Main function to execute the script.
     """
-    # --- Configuration: Base path for the data files ---
-    base_path = "/data3/zkachwal/visual-reasoning/data/ai-generation/responses/"
+    # Use RESPONSES_DIR from config
+    base_path = config.RESPONSES_DIR
     
     # --- Define file names for each method ---
     # Method 1: zeroshot
-    file_name_method1 = "AI_util-df402k-llama3-11b-zeroshot-n1-wait0-rationales.jsonl"
+    file_name_method1 = "AI_llama-df402k-llama3-11b-zeroshot-n1-wait0-rationales.jsonl"
     # Method 2: zeroshot-cot
-    file_name_method2 = "AI_util-df402k-llama3-11b-zeroshot-cot-n1-wait0-rationales.jsonl"
+    file_name_method2 = "AI_llama-df402k-llama3-11b-zeroshot-cot-n1-wait0-rationales.jsonl"
     # Method 3: zeroshot-2-artifacts
-    file_name_method3 = "AI_util-df402k-llama3-11b-zeroshot-2-artifacts-n1-wait0-rationales.jsonl"
+    file_name_method3 = "AI_llama-df402k-llama3-11b-zeroshot-2-artifacts-n1-wait0-rationales.jsonl"
 
     # Construct full file paths
-    file_path_method1 = os.path.join(base_path, file_name_method1)
-    file_path_method2 = os.path.join(base_path, file_name_method2)
-    file_path_method3 = os.path.join(base_path, file_name_method3)
+    file_path_method1 = base_path / file_name_method1
+    file_path_method2 = base_path / file_name_method2
+    file_path_method3 = base_path / file_name_method3
     # ---------------------------------------------
 
     print(f"Attempting to load scores for Method 1 (zeroshot) from: {file_path_method1}")

@@ -1,50 +1,48 @@
 import os
 import pandas as pd
-from PIL import Image, UnidentifiedImageError # Import specific error
+from PIL import Image, UnidentifiedImageError
 import tqdm
 import requests
 import io
 import ast
-import logging # Use logging instead of print for errors/info
-from pathlib import Path # Use pathlib for path manipulation
-from typing import Union # For type hinting paths
+import logging
+from pathlib import Path
+from typing import Union
+import argparse # Keep argparse for flexibility
+
+import sys # Add sys to potentially append project root to path
+# Assuming config.py is in the parent directory of 'experiments'
+# If config.py is at the same level as the 'experiments' dir (project root)
+# This finds the project root, then appends to sys.path to make 'config' importable
+project_root = Path(__file__).resolve().parent.parent 
+sys.path.append(str(project_root))
+import config # <--- IMPORT YOUR NEW CONFIG FILE
 
 # --- Configuration ---
-# Configure logging for better feedback
+# Old logging config can be kept or moved to config.py if desired globally
 logging.basicConfig(
     level=logging.INFO,
     format='%(asctime)s - %(levelname)s - %(message)s',
-    filename='processing_log.log', # Add this line
-    filemode='a' # Optional: 'a' for append (default), 'w' for overwrite
+    filename=config.LOAD_D3_LOG_FILE, # <--- USE FROM CONFIG
+    filemode='a'
 )
 
-# Define columns containing generated image data more dynamically
 GEN_IMAGE_COLS = [f'image_gen{i}' for i in range(4)]
-URL_COL = 'url' # Define column names as constants
+URL_COL = 'url'
 
 # --- Function Definition ---
-def load_d3_data(
-    csv_filepath: Union[str, Path],
-    save_directory: Union[str, Path],
+# Change function signature to accept None for paths, then use config if None
+def load_d3_images_from_csv( # Renamed function slightly for clarity
+    csv_filepath: Union[str, Path, None] = None,
+    save_directory: Union[str, Path, None] = None,
     timeout: int = 10,
     overwrite: bool = False
 ) -> None:
-    """
-    Downloads real images and extracts/saves generated images from a CSV file.
-    If any error occurs during the processing of ANY image (real or generated)
-    for a given row, the entire row processing is skipped.
+    # Use paths from config if not provided, otherwise use provided arguments
+    csv_file = Path(csv_filepath) if csv_filepath else config.D3_CSV_FILE
+    save_dir = Path(save_directory) if save_directory else config.D3_DIR # Save into the D3 data dir by default
 
-    Args:
-        csv_filepath: Path to the input CSV file.
-                       Expected columns: 'url', 'image_gen0', ..., 'image_gen3'.
-        save_directory: Directory where images will be saved. It will be created if it doesn't exist.
-        timeout: Timeout in seconds for the image download request.
-        overwrite: If True, overwrite existing image files. Otherwise, skip them.
-    """
-    csv_file = Path(csv_filepath)
-    save_dir = Path(save_directory)
-
-    # --- Pre-checks and Setup ---
+    # --- Pre-checks and Setup --- (rest of the function largely the same)
     if not csv_file.is_file():
         logging.error(f"CSV file not found: {csv_file}")
         return
@@ -143,23 +141,32 @@ def load_d3_data(
 
 # --- Example Usage ---
 if __name__ == "__main__":
-    # Use argparse for command-line arguments for flexibility
-    import argparse
+    parser = argparse.ArgumentParser(description="Download real images and extract generated images specified in a CSV for D3.")
 
-    parser = argparse.ArgumentParser(description="Download real images and extract generated images specified in a CSV.")
+    # Arguments can now override config defaults
+    parser.add_argument('--csv_filepath', type=Path, default=None, # Default to None to use config
+                        help=f"Path to the input CSV file. Default: {config.D3_CSV_FILE}")
+    parser.add_argument('--save_directory', type=Path, default=None, # Default to None to use config
+                        help=f"Directory where images will be saved. Default: {config.D3_DIR}")
     parser.add_argument("-t", "--timeout", type=int, default=10, help="Timeout for image downloads in seconds (default: 10).")
     parser.add_argument("-f", "--force", action="store_true", help="Force overwrite of existing image files.")
     parser.add_argument("-v", "--verbose", action="store_true", help="Enable debug logging.")
 
     args = parser.parse_args()
 
-    # Adjust logging level if verbose flag is set
     if args.verbose:
         logging.getLogger().setLevel(logging.DEBUG)
 
-    load_d3_data(
-        csv_filepath="/data3/singhdan/ELSA_D3/D3_2k_sample.csv",
-        save_directory="/data3/zkachwal/ELSA_D3",
+    # Determine actual paths to use: command-line arg if provided, else config default
+    final_csv_path = args.csv_filepath if args.csv_filepath else config.D3_CSV_FILE
+    final_save_dir = args.save_directory if args.save_directory else config.D3_DIR
+
+    logging.info(f"Using CSV file: {final_csv_path}")
+    logging.info(f"Using save directory: {final_save_dir}")
+
+    load_d3_images_from_csv( # Call the renamed function
+        csv_filepath=final_csv_path,
+        save_directory=final_save_dir,
         timeout=args.timeout,
         overwrite=args.force
     )

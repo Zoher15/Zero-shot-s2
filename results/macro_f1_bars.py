@@ -5,17 +5,23 @@ import numpy as np
 import sys
 from collections import defaultdict
 import matplotlib.pyplot as plt
-import matplotlib.patches as mpatches # Import for custom legend patches
+import matplotlib.patches as mpatches
 import json
-from scipy.stats import norm # For Z-score in Wald interval (fallback or comparison)
-from sklearn.metrics import f1_score # For Macro F1 calculation
+from scipy.stats import norm
+from sklearn.metrics import f1_score
+from pathlib import Path # <--- ADD
+
+# Assuming config.py is in the project root (parent of 'results')
+project_root = Path(__file__).resolve().parent.parent
+sys.path.append(str(project_root))
+import config # <--- ADD
 
 # --- Seed for reproducibility (affects bootstrap sampling) ---
 np.random.seed(0)
 
 # --- Configuration ---
-RESPONSES_DIR = '/data3/zkachwal/visual-reasoning/data/ai-generation/responses/'
-CI_CACHE_DIR = "/data3/zkachwal/visual-reasoning/experiments/ci_cache" # Directory to store/load bootstrap CI results
+RESPONSES_DIR = config.RESPONSES_DIR # <--- CHANGED
+CI_CACHE_DIR = config.CI_CACHE_DIR # <--- CHANGED
 
 X_AXIS_ENTITIES_INTERNAL = ["qwen25-7b", "llama3-11b", "CoDE"]
 ENTITY_PLOT_DISPLAY_NAME_MAP = {
@@ -224,7 +230,7 @@ def load_data_for_plotting(responses_dir, entities_to_load, datasets_to_load, ll
                         score = None # Force recalculation
                 
                 if score is None: # Not in cache or cache error
-                    fname_rationale = f"AI_dev-{dataset_name}-CoDE-rationales.jsonl"
+                    fname_rationale = f"AI_qwen-{dataset_name}-CoDE-rationales.jsonl"
                     fpath_rationale = os.path.join(responses_dir, fname_rationale)
                     if os.path.exists(fpath_rationale):
                         try:
@@ -279,7 +285,7 @@ def load_data_for_plotting(responses_dir, entities_to_load, datasets_to_load, ll
                             score = None # Force recalculation
 
                     if score is None: # Not in cache or cache error
-                        filename_prefix = "AI_util" if "llama" in entity_name.lower() else "AI_dev"
+                        filename_prefix = "AI_llama" if "llama" in entity_name.lower() else "AI_qwen"
                         fname_rationale = f"{filename_prefix}-{dataset_name}-{entity_name}-{llm_method}-n{n_val_param}-wait{wait_val_param}-rationales.jsonl"
                         fpath_rationale = os.path.join(responses_dir, fname_rationale)
 
@@ -465,9 +471,15 @@ else:
             fig.legend(final_legend_handles, final_legend_labels, loc='upper center', 
                         ncol=len(final_legend_labels), bbox_to_anchor=(0.5, 1.0), fontsize=LEGEND_FONTSIZE)
         plt.tight_layout(rect=[0, 0, 1, 0.90]) # Adjust for legend
-        output_filename = "ai_generation_macro_f1_bootstrap_ci_plot.png" 
-        plt.savefig(output_filename, dpi=300, bbox_inches='tight')
-        print(f"--- Plot Generation Complete --- Plot saved to {output_filename}")
+        
+        # Ensure the PLOTS_DIR from config exists
+        config.PLOTS_DIR.mkdir(parents=True, exist_ok=True) # <--- ADD DIRECTORY CREATION
+
+        output_filename_only = "ai_generation_macro_f1_bootstrap_ci_plot.png" # Keep the base filename
+        output_filepath = config.PLOTS_DIR / output_filename_only # <--- CONSTRUCT FULL PATH
+
+        plt.savefig(output_filepath, dpi=300, bbox_inches='tight') # <--- USE output_filepath
+        print(f"--- Plot Generation Complete --- Plot saved to {output_filepath}") # <--- USE output_filepath
     else: # num_cols == 0
         print("Plot generation skipped as no datasets were available to plot.")
 

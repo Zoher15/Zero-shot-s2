@@ -6,15 +6,20 @@ import re
 import numpy as np
 import sys
 from collections import defaultdict
+from pathlib import Path # <--- ADD
+
+# Assuming config.py is in the project root (parent of 'results')
+project_root = Path(__file__).resolve().parent.parent
+sys.path.append(str(project_root))
+import config # <--- ADD
 
 # --- Configuration ---
 
 # Data Paths
-DF40_FILE = '/data3/singhdan/DF40/10k_sample_df40.csv'
-D3_DIR = '/data3/zkachwal/ELSA_D3/'
-GENIMAGE_FILE = '/data3/singhdan/genimage/10k_random_sample.csv'
-RESPONSES_DIR = '/data3/zkachwal/visual-reasoning/data/ai-generation/responses/'
-# SCORES_DIR is not used in this version as all scores come from RESPONSES_DIR's .jsonl files
+DF40_FILE = config.DF40_10K_CSV_FILE # Or config.DF40_2K_CSV_FILE if that's the default you need
+D3_DIR = config.D3_DIR
+GENIMAGE_FILE = config.GENIMAGE_10K_CSV_FILE # Or config.GENIMAGE_2K_CSV_FILE
+RESPONSES_DIR = config.RESPONSES_DIR
 
 # Models, Methods, and Datasets
 MODELS_ABBR = ['qwen2.5', 'llama3', 'CoDE'] 
@@ -477,9 +482,19 @@ def main():
     final_output = final_latex_string.getvalue()
     final_latex_string.close()
 
-    print("\n" + "="*25 + " Generated LaTeX Code " + "="*25)
-    print(final_output)
-    print("="*70)
+    # Ensure the TABLES_DIR from config exists
+    config.TABLES_DIR.mkdir(parents=True, exist_ok=True) # <--- ADD DIRECTORY CREATION
+
+    output_tex_filename = "combined_results_tables.tex" # <--- DEFINE OUTPUT FILENAME (or make it more specific)
+    output_tex_filepath = config.TABLES_DIR / output_tex_filename # <--- CONSTRUCT FULL PATH
+
+    try:
+        with open(output_tex_filepath, 'w', encoding='utf-8') as f:
+            f.write(final_output)
+        print(f"\nLaTeX table code saved to: {output_tex_filepath}") # <--- PRINT NEW PATH
+    except IOError as e:
+        print(f"\nError saving LaTeX to file {output_tex_filepath}: {e}", file=sys.stderr)
+
     print("\nNotes (Updated):")
     print("- CoDe recall scores are now calculated from .jsonl files in RESPONSES_DIR.")
     print("-   (Updated CoDe .jsonl filename assumption: AI_dev-{dataset}-CoDE-rationales.jsonl)")

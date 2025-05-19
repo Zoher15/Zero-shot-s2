@@ -6,15 +6,20 @@ import re
 import numpy as np
 import sys
 from collections import defaultdict
+from pathlib import Path # <--- ADD
+
+# Assuming config.py is in the project root (parent of 'results')
+project_root = Path(__file__).resolve().parent.parent
+sys.path.append(str(project_root))
+import config # <--- ADD
 
 # --- Configuration ---
 
 # Data Paths
-DF40_FILE = '/data3/singhdan/DF40/10k_sample_df40.csv'
-D3_DIR = '/data3/zkachwal/ELSA_D3/'
-GENIMAGE_FILE = '/data3/singhdan/genimage/10k_random_sample.csv'
-RESPONSES_DIR = '/data3/zkachwal/visual-reasoning/data/ai-generation/responses/'
-# SCORES_DIR is not used in this version as all scores come from RESPONSES_DIR's .jsonl files
+DF40_FILE = config.DF40_10K_CSV_FILE # Or config.DF40_2K_CSV_FILE depending on desired default
+D3_DIR = config.D3_DIR
+GENIMAGE_FILE = config.GENIMAGE_10K_CSV_FILE # Or config.GENIMAGE_2K_CSV_FILE
+RESPONSES_DIR = config.RESPONSES_DIR
 
 # Models, Methods, and Datasets
 MODELS_ABBR = ['qwen2.5', 'llama3.2','CoDE']
@@ -290,7 +295,7 @@ def main():
             if model_abbr == 'CoDE':
                 methods_to_process_for_model = [CODE_RECALL_METHOD_KEY] # Use internal key
                 # CoDE filename pattern (adjust if needed)
-                file_name_template = f"AI_dev-{dataset_name}-CoDE-rationales.jsonl"
+                file_name_template = f"AI_qwen-{dataset_name}-CoDE-rationales.jsonl"
             else: # Handle LLMs
                 model_full = MODEL_NAME_MAP_FULL.get(model_abbr)
                 if not model_full:
@@ -299,9 +304,9 @@ def main():
                 methods_to_process_for_model = LLM_METHODS
 
                 # Determine filename prefix based on model name convention
-                filename_prefix = "AI_dev" # Default prefix
+                filename_prefix = "AI_qwen" # Default prefix
                 if "llama" in model_abbr.lower():
-                    filename_prefix = "AI_util" # Specific prefix for llama models
+                    filename_prefix = "AI_llama" # Specific prefix for llama models
 
                 # LLM filename pattern
                 file_name_template = f"{filename_prefix}-{dataset_name}-{model_full}-{{method}}-n1-wait0-rationales.jsonl"
@@ -671,13 +676,20 @@ def main():
     final_latex_string.write("% \\end{document}\n")
 
     # --- 7. Output ---
-    final_output = final_latex_string.getvalue() # Get the complete LaTeX string
-    final_latex_string.close() # Close the StringIO object
+    final_output = final_latex_string.getvalue()
+    final_latex_string.close()
 
-    # Print the generated LaTeX code to the console
-    print("\n" + "="*25 + " Generated LaTeX Code " + "="*25)
-    print(final_output)
-    print("="*70)
+    # Ensure the TABLES_DIR from config exists
+    config.TABLES_DIR.mkdir(parents=True, exist_ok=True) # <--- ADD DIRECTORY CREATION
+    output_tex_filename = "recall_subsets_tables.tex" # <--- DEFINE OUTPUT FILENAME
+    output_tex_filepath = config.TABLES_DIR / output_tex_filename # <--- CONSTRUCT FULL PATH
+
+    try:
+        with open(output_tex_filepath, 'w', encoding='utf-8') as f:
+            f.write(final_output)
+        print(f"\nLaTeX table code saved to: {output_tex_filepath}") # <--- PRINT NEW PATH
+    except IOError as e:
+        print(f"\nError saving LaTeX to file {output_tex_filepath}: {e}", file=sys.stderr)
 
     # Print summary notes
     print("\nNotes:")
@@ -689,7 +701,7 @@ def main():
     print(f"- Recall scores/differences formatted to 1 decimal place ({ZERO_PAD_RECALL=}).")
     print("- JSON files read using `json.load(f)` assuming a list structure.")
     print("- CoDe recall scores calculated from its .jsonl file.")
-    print("- LLM .jsonl filenames use 'AI_util' for 'llama', 'AI_dev' for others.")
+    print("- LLM .jsonl filenames use 'AI_llama' for 'llama', 'AI_qwen' for others.")
     print("- Image key matching adjusted for D3 (uses filename) vs DF40/GenImage (uses path).")
     print("- Space between score and difference value has been removed.")
 

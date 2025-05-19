@@ -1,86 +1,33 @@
-import json
 import os
-from pathlib import Path # <--- ADD
-import sys # <--- ADD
+import sys
+from pathlib import Path
+import logging # Import the logging module
 
-# Assuming config.py is in the project root (parent of 'results')
+# --- Project Setup ---
+# Ensures 'config' and 'utils' can be imported
 project_root = Path(__file__).resolve().parent.parent
-sys.path.append(str(project_root))
-import config # <--- ADD
+if str(project_root) not in sys.path:
+    sys.path.append(str(project_root))
 
-def load_scores_from_jsonl(file_path):
-    """
-    Loads image scores from a JSON file, expecting a JSON array of records.
+import config # For accessing configured paths like RESPONSES_DIR
+from utils import helpers # For utility functions
 
-    Each record in the array is expected to be a JSON object containing
-    at least "image" (path) and "cur_score" (integer).
+# --- Logger Setup ---
+logger = logging.getLogger(__name__)
+# Basic configuration for the logger. This will apply if no other handlers are configured.
+# You might want a more sophisticated setup in a main application entry point.
+if not logging.getLogger().hasHandlers():
+    logging.basicConfig(
+        level=logging.INFO,
+        format='%(asctime)s - %(levelname)s - %(name)s - %(message)s'
+    )
 
-    Args:
-        file_path (str): The path to the JSON file.
-
-    Returns:
-        dict: A dictionary mapping image paths to their cur_score.
-              Returns an empty dictionary if the file cannot be read, is not a JSON array,
-              or contains no valid records.
-    """
-    scores = {}
-    try:
-        with open(file_path, 'r') as f:
-            # Attempt to load the entire file as one JSON structure (expecting a list of records)
-            all_records = json.load(f)
-
-        if not isinstance(all_records, list):
-            print(f"Error: Content of {file_path} is not a JSON list as expected. Found type: {type(all_records)}.")
-            print("The script expects the file to contain a JSON array, like: [{\"key\": \"val\", ...}, {\"key\": \"val\", ...}]")
-            return scores # Return empty scores
-
-        print(f"Successfully parsed {file_path} as a JSON array with {len(all_records)} records.")
-
-        for record_number, record in enumerate(all_records, 1):
-            try:
-                if not isinstance(record, dict):
-                    print(f"Warning: Record {record_number} in {file_path} is not a JSON object (dict), but got {type(record)}. Skipping this record.")
-                    continue
-
-                image_path = record.get("image")
-                cur_score = record.get("cur_score")
-
-                if image_path is None or cur_score is None:
-                    print(f"Warning: Skipping record {record_number} in {file_path} due to missing 'image' or 'cur_score' key. Record: {str(record)[:100]}...")
-                    continue
-                
-                if not isinstance(image_path, str):
-                    print(f"Warning: Skipping record {record_number} in {file_path}. 'image' path is not a string: {image_path}. Record: {str(record)[:100]}...")
-                    continue
-
-                # Ensure cur_score is an integer
-                if isinstance(cur_score, str) and cur_score.isdigit():
-                    cur_score = int(cur_score)
-                elif not isinstance(cur_score, int):
-                     print(f"Warning: Skipping record {record_number} in {file_path} for image '{image_path}' due to non-integer 'cur_score': {cur_score} (type: {type(cur_score)}).")
-                     continue
-
-                scores[image_path] = cur_score
-            except Exception as e:
-                # This catches errors during processing of an individual record after successful file parse
-                print(f"Warning: An unexpected error occurred processing record {record_number} from {file_path}: {e}. Record snippet: '{str(record)[:100]}...'")
-
-    except json.JSONDecodeError as e:
-        print(f"Error: Failed to decode {file_path} as a single JSON document. The file is not a valid JSON array or object.")
-        print(f"JSONDecodeError details: {e}")
-        print("Please ensure the file contains a valid JSON array, e.g., [{\"entry1\": ...}, {\"entry2\": ...}].")
-    except FileNotFoundError:
-        print(f"Error: File not found: {file_path}")
-    except Exception as e:
-        # This catches other errors like permission issues during file open/read
-        print(f"Error: Could not read or process file {file_path}: {e}")
-    
-    return scores
-
+# find_images_with_specific_scores function remains the same as its core logic is sound.
+# We'll just ensure its print statements (if any were there) are also converted to logger calls.
 def find_images_with_specific_scores(scores_m1, scores_m2, scores_m3):
     """
-    Finds images where method1 (zeroshot) score is 0, 
-    method2 (zeroshot-cot) score is 0, and 
+    Finds images where method1 (zeroshot) score is 0,
+    method2 (zeroshot-cot) score is 0, and
     method3 (zeroshot-2-artifacts) score is 1.
 
     Args:
@@ -92,92 +39,100 @@ def find_images_with_specific_scores(scores_m1, scores_m2, scores_m3):
         list: A list of image paths matching the criteria.
     """
     matching_images = []
-
-    # Get a set of all unique image paths from all methods
-    # Ensure keys are strings, as image paths should be.
     all_image_paths = set()
-    if scores_m1: # Check if dictionary is not empty
-        all_image_paths.update(k for k in scores_m1.keys() if isinstance(k, str))
-    if scores_m2:
-        all_image_paths.update(k for k in scores_m2.keys() if isinstance(k, str))
-    if scores_m3:
-        all_image_paths.update(k for k in scores_m3.keys() if isinstance(k, str))
 
+    # Consolidate image paths, ensuring keys are strings
+    for scores_dict in [scores_m1, scores_m2, scores_m3]:
+        if scores_dict: # Check if dictionary is not None or empty
+            all_image_paths.update(k for k in scores_dict.keys() if isinstance(k, str))
 
     if not all_image_paths:
-        print("No valid image paths found in any of the loaded scores to compare.")
+        logger.warning("No valid image paths found in any of the loaded scores to compare.")
         return matching_images
 
     processed_count = 0
     for image_path in all_image_paths:
-        processed_count +=1
+        processed_count += 1
         score_m1 = scores_m1.get(image_path)
         score_m2 = scores_m2.get(image_path)
         score_m3 = scores_m3.get(image_path)
 
         # Check if all scores are available (not None) and match the criteria
-        if score_m1 == 0 and \
-           score_m2 == 0 and \
-           score_m3 == 1:
+        if score_m1 == 0 and score_m2 == 0 and score_m3 == 1:
             matching_images.append(image_path)
-    
-    print(f"Processed {processed_count} unique image paths for score comparison.")
+
+    logger.info(f"Processed {processed_count} unique image paths for score comparison.")
     return matching_images
 
 def main():
     """
     Main function to execute the script.
+    Uses helpers.load_scores_from_jsonl_file and logging.
     """
-    # Use RESPONSES_DIR from config
+    logger.info("--- Starting Find Images Script ---")
     base_path = config.RESPONSES_DIR
-    
-    # --- Define file names for each method ---
-    # Method 1: zeroshot
-    file_name_method1 = "AI_llama-df402k-llama3-11b-zeroshot-n1-wait0-rationales.jsonl"
-    # Method 2: zeroshot-cot
-    file_name_method2 = "AI_llama-df402k-llama3-11b-zeroshot-cot-n1-wait0-rationales.jsonl"
-    # Method 3: zeroshot-2-artifacts
-    file_name_method3 = "AI_llama-df402k-llama3-11b-zeroshot-2-artifacts-n1-wait0-rationales.jsonl"
 
-    # Construct full file paths
+    # --- Define file names for each method ---
+    # These filenames should match exactly how they are saved by your evaluation scripts.
+    # The original find_images.py used -wait0 in filenames.
+    # The refactored eval scripts (via helpers.save_evaluation_outputs) likely save without -wait0 if wait is 0.
+    # Adjust these filenames if needed.
+    # Assuming n1 and wait0 are standard for these specific files:
+    dataset_identifier = "df402k" # Example, make this configurable if needed
+    model_identifier = "llama3-11b" # Example
+    n_val = "n1"
+    # wait_val_str = "wait0" # Only include if your filenames consistently have this
+
+    # Construct filenames more robustly
+    # If wait_val_str is part of your actual filenames:
+    # file_name_method1 = f"AI_llama-{dataset_identifier}-{model_identifier}-zeroshot-{n_val}-{wait_val_str}-rationales.jsonl"
+    # file_name_method2 = f"AI_llama-{dataset_identifier}-{model_identifier}-zeroshot-cot-{n_val}-{wait_val_str}-rationales.jsonl"
+    # file_name_method3 = f"AI_llama-{dataset_identifier}-{model_identifier}-zeroshot-2-artifacts-{n_val}-{wait_val_str}-rationales.jsonl"
+
+    # If -wait0 is omitted when wait is 0 (more likely with current eval script save logic):
+    file_name_method1 = f"AI_llama-{dataset_identifier}-{model_identifier}-zeroshot-{n_val}-rationales.jsonl"
+    file_name_method2 = f"AI_llama-{dataset_identifier}-{model_identifier}-zeroshot-cot-{n_val}-rationales.jsonl"
+    file_name_method3 = f"AI_llama-{dataset_identifier}-{model_identifier}-zeroshot-2-artifacts-{n_val}-rationales.jsonl"
+
+
     file_path_method1 = base_path / file_name_method1
     file_path_method2 = base_path / file_name_method2
     file_path_method3 = base_path / file_name_method3
     # ---------------------------------------------
 
-    print(f"Attempting to load scores for Method 1 (zeroshot) from: {file_path_method1}")
-    scores_method1 = load_scores_from_jsonl(file_path_method1)
-    print(f"Loaded {len(scores_method1)} scores for Method 1.\n")
+    logger.info(f"Attempting to load scores for Method 1 (zeroshot) from: {file_path_method1}")
+    scores_method1 = helpers.load_scores_from_jsonl_file(file_path_method1)
+    logger.info(f"Loaded {len(scores_method1)} scores for Method 1.")
 
-    print(f"Attempting to load scores for Method 2 (zeroshot-cot) from: {file_path_method2}")
-    scores_method2 = load_scores_from_jsonl(file_path_method2)
-    print(f"Loaded {len(scores_method2)} scores for Method 2.\n")
+    logger.info(f"Attempting to load scores for Method 2 (zeroshot-cot) from: {file_path_method2}")
+    scores_method2 = helpers.load_scores_from_jsonl_file(file_path_method2)
+    logger.info(f"Loaded {len(scores_method2)} scores for Method 2.")
 
-    print(f"Attempting to load scores for Method 3 (zeroshot-2-artifacts) from: {file_path_method3}")
-    scores_method3 = load_scores_from_jsonl(file_path_method3)
-    print(f"Loaded {len(scores_method3)} scores for Method 3.\n")
+    logger.info(f"Attempting to load scores for Method 3 (zeroshot-2-artifacts) from: {file_path_method3}")
+    scores_method3 = helpers.load_scores_from_jsonl_file(file_path_method3)
+    logger.info(f"Loaded {len(scores_method3)} scores for Method 3.")
 
-    # Check if any scores were loaded at all
     if not scores_method1 and not scores_method2 and not scores_method3:
-        # Check if files actually exist to differentiate between "file not found" and "file empty/invalid"
-        files_exist = [os.path.exists(p) for p in [file_path_method1, file_path_method2, file_path_method3]]
-        if not any(files_exist):
-             print("Critical Warning: None of the specified data files were found. Please check the file paths and names.")
+        files_exist_check = [p.exists() for p in [file_path_method1, file_path_method2, file_path_method3]]
+        if not any(files_exist_check):
+            logger.critical("None of the specified data files were found. Please check paths and filenames.")
         else:
-             print("Warning: No scores were loaded from any of the files. This could be due to files being empty, not valid JSON arrays, or containing no records with 'image' and 'cur_score'.")
-        
-        print("Halting execution as no data is available to process.")
+            logger.warning("No scores loaded from any files. Files might be empty or not in the expected format.")
+        logger.info("Halting execution as no data is available to process.")
         return
 
-    print("Finding matching images...")
+    logger.info("Finding matching images based on score criteria...")
     result_images = find_images_with_specific_scores(scores_method1, scores_method2, scores_method3)
 
     if result_images:
-        print(f"\nFound {len(result_images)} images matching the criteria (zeroshot=0, zeroshot-cot=0, zeroshot-2-artifacts=1):")
-        for image_path in result_images:
-            print(image_path)
+        logger.info(f"Found {len(result_images)} images matching the criteria (zeroshot=0, zeroshot-cot=0, zeroshot-2-artifacts=1):")
+        for image_path_result in result_images:
+            # Using logger.info for each image path, could be print if it's direct user output.
+            # For script output that might be parsed, logging is fine.
+            logger.info(image_path_result)
     else:
-        print("\nNo images found matching the specified criteria.")
+        logger.info("No images found matching the specified criteria.")
+    logger.info("--- Find Images Script Finished ---")
 
 if __name__ == "__main__":
     main()

@@ -78,7 +78,7 @@ def load_test_data_for_qwen(dataset_arg_val: str, question_str: str) -> list:
     return examples
 
 # --- Model Response Generation (Qwen-specific functions) ---
-def get_first_responses_qwen(prompt_texts, messages_list, model_kwargs_dict):
+def get_first_responses(prompt_texts, messages_list, model_kwargs_dict):
     model_kwargs_copy = model_kwargs_dict.copy()
     current_messages_for_processing = []
 
@@ -111,7 +111,7 @@ def get_first_responses_qwen(prompt_texts, messages_list, model_kwargs_dict):
     torch.cuda.empty_cache()
     return responses
 
-def get_second_responses_qwen(prompt_texts, first_responses, messages_list, model_kwargs_dict, current_answer_phrase):
+def get_second_responses(prompt_texts, first_responses, messages_list, model_kwargs_dict, current_answer_phrase):
     model_kwargs_copy = model_kwargs_dict.copy()
     model_kwargs_copy.pop('num_return_sequences', None)
     model_kwargs_copy['do_sample'] = False

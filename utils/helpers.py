@@ -390,6 +390,19 @@ def format_score_for_display(score: Union[float, int, None], zero_pad: bool = Tr
                 formatted_val = f"0{formatted_val}"
     return formatted_val
 
+def get_numeric_model_size(size_str: str) -> float:
+    """Converts a model size string (e.g., '7b', '6m') to a numeric value for sorting."""
+    size_str = str(size_str).lower()
+    if 'b' in size_str:
+        return float(size_str.replace('b', '')) * 1e9
+    if 'm' in size_str:
+        return float(size_str.replace('m', '')) * 1e6
+    try:
+        return float(size_str) # For cases where size is just a number
+    except ValueError:
+        logger.warning(f"Could not convert size_str '{size_str}' to numeric. Returning inf.")
+        return float('inf')
+
 def get_macro_f1_from_counts(score_counts: Dict[str, int]) -> float:
     tp = score_counts.get('TP', 0)
     fp = score_counts.get('FP', 0)

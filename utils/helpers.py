@@ -194,6 +194,53 @@ def append_prompt_suffix_for_mode(prompt_text: str, mode_type: str) -> str:
                  # Or, decide if multiple suffixes can be chained.
     return prompt_text
 
+def load_genimage_data_examples(file_path: Union[str, Path], question_str: str) -> List[Dict[str, Any]]:
+    """Loads GenImage data from a CSV file and formats it into the 'examples' list structure."""
+    # Ensure file_path is a Path object for consistency, though pd.read_csv handles strings
+    data = pd.read_csv(Path(file_path))
+    examples = []
+    for _, row in data.iterrows():
+        example_data = {}
+        example_data['image'] = str(row['img_path']) # Ensure path is string
+        example_data['question'] = question_str
+        example_data['answer'] = 'real' if row['dataset'] == 'real' else 'ai-generated'
+        examples.append(example_data)
+    return examples
+
+def load_d3_data_examples(dir_path: Union[str, Path], question_str: str) -> List[Dict[str, Any]]:
+    """
+    Loads D3 data from a directory by listing .png files.
+    Infers 'real' or 'ai-generated' from filenames.
+    """
+    examples = []
+    directory = Path(dir_path)
+    if not directory.is_dir():
+        print(f"Error: D3 data directory not found: {directory}")
+        return examples
+
+    for file_name in os.listdir(directory):
+        if file_name.lower().endswith(".png"): # Case-insensitive check for .png
+            full_path = directory / file_name
+            answer = 'real' if 'real' in file_name.lower() else 'ai-generated'
+            examples.append({
+                'image': str(full_path),
+                'question': question_str,
+                'answer': answer
+            })
+    return examples
+
+def load_df40_data_examples(file_path: Union[str, Path], question_str: str) -> List[Dict[str, Any]]:
+    """Loads DF40 data from a CSV file and formats it."""
+    data = pd.read_csv(Path(file_path))
+    examples = []
+    for _, row in data.iterrows():
+        example_data = {}
+        example_data['image'] = str(row['file_path']) # Ensure path is string
+        example_data['question'] = question_str
+        example_data['answer'] = 'real' if row['label'] == 'real' else 'ai-generated'
+        examples.append(example_data)
+    return examples
+
 def load_test_data(dataset_arg: str, config_module: any, question_phrase: str) -> list:
     """Loads test data based on the dataset argument."""
     examples = []

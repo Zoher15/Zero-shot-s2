@@ -21,7 +21,7 @@ from PIL import Image
 
 # --- Argument Parsing ---
 parser = helpers.get_evaluation_args_parser()
-# If evaluate_AI_llama.py had LLaMA-specific arguments, add them here:
+# If evaluate_AI_llama.py had Llama-specific arguments, add them here:
 # parser.add_argument("--llama_specific_arg", default="some_value")
 args = parser.parse_args()
 
@@ -37,7 +37,7 @@ answer_phrase = config.EVAL_ANSWER_PHRASE
 
 def load_test_data_for_llama(dataset_arg_val: str, question_str: str) -> list:
     """
-    Loads and shuffles test data for LLaMA evaluation.
+    Loads and shuffles test data for Llama evaluation.
     This function will call specific data loaders which should be in helpers.py.
     """
     examples = []
@@ -63,7 +63,7 @@ def load_test_data_for_llama(dataset_arg_val: str, question_str: str) -> list:
 
 
 # --- Model Response Generation ---
-# get_first_responses and get_second_responses remain largely the same for LLaMA due to specific
+# get_first_responses and get_second_responses remain largely the same for Llama due to specific
 # image handling (Image.open) and processor calls. Minor cleanups can be done.
 
 def get_first_responses(prompt_texts, image_paths, model_kwargs_dict):
@@ -151,7 +151,7 @@ def eval_AI(instructions_str, current_model_str, mode_type_str, test_data_list, 
         prompt_text = helpers.append_prompt_suffix_for_mode(prompt_text, mode_type_str) # USE HELPER
         prompt_messages_examples_list.append((prompt_text, example_item)) # Storing example directly
 
-    print(f"INFO: Running LLaMA evaluation: Dataset={args.dataset}, Mode={mode_type_str}, Model={current_model_str}, NumSequences={num_sequences_arg}, BatchSize={current_batch_size}")
+    print(f"INFO: Running Llama evaluation: Dataset={args.dataset}, Mode={mode_type_str}, Model={current_model_str}, NumSequences={num_sequences_arg}, BatchSize={current_batch_size}")
 
     correct_count = 0
     confusion_matrix_counts = {'TP': 0, 'FP': 0, 'TN': 0, 'FN': 0}
@@ -218,7 +218,7 @@ def eval_AI(instructions_str, current_model_str, mode_type_str, test_data_list, 
 
 # --- Main Execution Block ---
 if __name__ == "__main__":
-    # Model Dictionaries (specific to LLaMA evaluation)
+    # Model Dictionaries (specific to Llama evaluation)
     model_dict = {"llama3-11b": "meta-llama/Llama-3.2-11B-Vision-Instruct", 
                   "llama3-90b": "meta-llama/Llama-3.2-90B-Vision-Instruct"}
     processor_dict = {"llama3-11b": "meta-llama/Llama-3.2-11B-Vision-Instruct", 
@@ -232,16 +232,16 @@ if __name__ == "__main__":
         processor_name_path = processor_dict[model_str]
         vl_model_class = VL_dict[model_str]
     except KeyError:
-        print(f"ERROR: Model string '{model_str}' not found in LLaMA dictionaries. Available: {list(model_dict.keys())}")
+        print(f"ERROR: Model string '{model_str}' not found in Llama dictionaries. Available: {list(model_dict.keys())}")
         sys.exit(1)
 
-    print(f"INFO: Loading LLaMA processor: {processor_name_path}")
+    print(f"INFO: Loading Llama processor: {processor_name_path}")
     processor = AutoProcessor.from_pretrained(processor_name_path)
     processor.padding_side = "left" # Common setting
     if processor.tokenizer.pad_token is None and processor.tokenizer.eos_token is not None:
         processor.tokenizer.pad_token = processor.tokenizer.eos_token
 
-    print(f"INFO: Loading LLaMA model: {model_name_path}")
+    print(f"INFO: Loading Llama model: {model_name_path}")
     model_load_kwargs = {"torch_dtype": torch.bfloat16, "device_map": "auto"}
     model = vl_model_class.from_pretrained(model_name_path, **model_load_kwargs).eval()
     
@@ -265,5 +265,5 @@ if __name__ == "__main__":
         args.batch_size # Pass batch_size from args
     )
 
-    print(f"\nINFO: Evaluation finished for LLaMA model: {model_str} on dataset: {args.dataset} with mode: {args.mode}-n{args.num}")
+    print(f"\nINFO: Evaluation finished for Llama model: {model_str} on dataset: {args.dataset} with mode: {args.mode}-n{args.num}")
     print(f"Final Macro F1: {final_f1_score:.4f}")

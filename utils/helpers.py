@@ -840,6 +840,56 @@ def parse_model_name(model_name_config: str) -> Tuple[str, str]:
     print(f"Warning: Could not parse family/size reliably from LLM name: {model_name_config}. Returning as is.", file=sys.stderr)
     return model_name_config.lower(), "unknown_size"
 
+def load_rationales_from_file(file_path: Union[str, Path]) -> List[Dict[str, Any]]:
+    """
+    Loads a list of rationale dictionaries from a JSON file.
+    The file is expected to contain a single JSON array of records.
+    Args:
+        file_path: Path to the JSON file.
+    Returns:
+        A list of rationale dictionaries. Returns an empty list if errors occur.
+    """
+    file_path = Path(file_path) # Ensure it's a Path object
+    rationales_list = []
+    if not file_path.is_file():
+        print(f"ERROR: Rationale file not found: {file_path}", file=sys.stderr)
+        return rationales_list
+
+    try:
+        with open(file_path, 'r', encoding='utf-8') as f:
+            content = json.load(f) # Assumes the file contains a JSON list directly
+        
+        if isinstance(content, list):
+            # Basic check: are items in list dictionaries?
+            if all(isinstance(item, dict) for item in content):
+                rationales_list = content
+            else:
+                # Handle cases where the list might contain non-dict items, or a more complex structure like {'rationales': []}
+                # For now, assuming direct list of dicts based on current eval script outputs
+                # Check if it's the structure {'rationales': [...]} as seen in one of the scripts
+                if len(content) == 1 and isinstance(content[0], dict) and 'rationales' in content[0] and isinstance(content[0]['rationales'], list):
+                     rationales_list = content[0]['rationales']
+                elif isinstance(content, dict) and 'rationales' in content and isinstance(content['rationales'], list): # Check if content itself is the dict
+                    rationales_list = content['rationales']
+
+                else:
+                    print(f"Warning: Rationale file {file_path} contains a list, but not all items are dictionaries as expected, or structure is not recognized. Inspect file.", file=sys.stderr)
+                    # Attempt to filter for dictionaries if it's a mixed list
+                    # rationales_list = [item for item in content if isinstance(item, dict)]
+                    # if not rationales_list:
+                    #     print(f"Warning: No dictionaries found in the list from {file_path}.")
+        elif isinstance(content, dict) and 'rationales' in content and isinstance(content['rationales'], list):
+            # Handles the case where the file is a single JSON object with a 'rationales' key
+            rationales_list = content['rationales']
+        else:
+            print(f"ERROR: Rationale file {file_path} does not contain a JSON list or the expected dictionary structure. Found type: {type(content)}", file=sys.stderr)
+            
+    except json.JSONDecodeError as e:
+        print(f"ERROR: Could not decode JSON from rationale file {file_path}: {e}", file=sys.stderr)
+    except Exception as e:
+        print(f"ERROR: An unexpected error occurred while reading rationale file {file_path}: {e}", file=sys.stderr)
+    
+    return rationales_list
 
 if __name__ == '__main__':
     # Example usage of some utility functions

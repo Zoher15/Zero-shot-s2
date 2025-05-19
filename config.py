@@ -44,7 +44,8 @@ PROCESSED_INDIVIDUAL_RESPONSES_PKL = CACHE_DIR / "response_cleaned_corpora_v2.pk
 # We could centralize this too if desired, e.g., PROJECT_ROOT / "processing_log.log"
 # or OUTPUTS_DIR / "logs" / "load_d3_processing.log")
 LOAD_D3_LOG_FILE = PROJECT_ROOT / "load_d3_processing.log"
-
+EVAL_QUESTION_PHRASE = "Is this image real or AI-generated?"
+EVAL_ANSWER_PHRASE = "Final Answer(real/ai-generated):"
 
 # --- Potentially other configurations ---
 # Example: NLTK data path if you want to manage it centrally, though NLTK usually handles this.

@@ -1,550 +1,269 @@
 import sys
 from pathlib import Path
 
-# Assuming config.py is in the project root (parent of 'experiments')
 project_root = Path(__file__).resolve().parent.parent
 sys.path.append(str(project_root))
+
 import config
+from utils import helpers # Main import for our helper functions
 
 import os
-import argparse
-# Initialize the args parser
-parser = argparse.ArgumentParser(description="A simple argparse example")
-parser.add_argument("-m", "--mode", type=str, help="Mode of reasoning", default="zeroshot-2-artifacts")
-parser.add_argument("-llm", "--llm", type=str, help="The name of the model", default="llama3-11b")
-parser.add_argument("-c", "--cuda", type=str, help="CUDAs", default="0")
-parser.add_argument("-d", "--dataset", type=str, help="Dataset to use (e.g., 'faces' or 'genimage')", default="genimage")
-parser.add_argument("-b", "--batch_size", type=int, help="Batch size for the first response", default=10)
-parser.add_argument("-n", "--num", type=int, help="Number of sequences for the model", default=1)
-
-args = parser.parse_args()
-model_str = args.llm
-cudas = args.cuda
-batch_size = args.batch_size
-# set the CUDA and then import torch
-os.environ["CUDA_VISIBLE_DEVICES"] = cudas
-
+import argparse # argparse is used via helpers.get_evaluation_args_parser
 import torch
-from transformers import MllamaForConditionalGeneration, AutoProcessor, Llama4ForConditionalGeneration, set_seed
-set_seed(0)
-torch.manual_seed(0)
-torch.cuda.manual_seed(0)
-torch.backends.cudnn.deterministic = True
-torch.backends.cudnn.benchmark = False
+from transformers import MllamaForConditionalGeneration, AutoProcessor # Llama4ForConditionalGeneration removed as it's not used
 import json
 from tqdm import tqdm
 import re
 from collections import Counter
 import random
 import pandas as pd
-import re
 from PIL import Image
 
+# --- Argument Parsing ---
+parser = helpers.get_evaluation_args_parser()
+# If evaluate_AI_llama.py had LLaMA-specific arguments, add them here:
+# parser.add_argument("--llama_specific_arg", default="some_value")
+args = parser.parse_args()
 
-# Remove non-ascii characters
-def remove_non_ascii_characters(text):
-    return re.sub(r'[^\x00-\x7F]+', '', text).replace("  "," ").replace("\n","")
+# --- Environment Initialization ---
+helpers.initialize_environment(args.cuda) # Default seed 0
 
-# Remove spaces before punctuation marks
-def clean_up_sentence(text):
-    text = re.sub(r'\s+([,.!?;:])', r'\1', text)
-    return text
+# --- Global Variables & Constants ---
+model_str = args.llm
+batch_size = args.batch_size # This is used by eval_AI, but eval_AI could take it from args directly
+# Use from config now
+question_phrase = config.EVAL_QUESTION_PHRASE
+answer_phrase = config.EVAL_ANSWER_PHRASE
 
-# Combine both functions
-def clean_text(text):
-    text = remove_non_ascii_characters(text)
-    text = clean_up_sentence(text)
-    return text
-
-# Capitalize the first letter
-def capitalize_first_letter(text):
-    if text:
-        return text[0].upper() + text[1:]
-    return text
-
-def load_genimage_data(file, question):
-    data = pd.read_csv(file)
+def load_test_data_for_llama(dataset_arg_val: str, question_str: str) -> list:
+    """
+    Loads and shuffles test data for LLaMA evaluation.
+    This function will call specific data loaders which should be in helpers.py.
+    """
     examples = []
-    for _, row in data.iterrows():
-        example_data = {} # Renamed 'data' to avoid conflict
-        example_data['image'] = row['img_path']
-        example_data['question'] = question
-        example_data['answer'] = 'real' if row['dataset'] == 'real' else 'ai-generated'
-        examples.append(example_data)
-    return examples
-
-def load_d3_data(file_dir, question):
-    examples = []
-    for file in os.listdir(file_dir):
-        data = {
-            'image': os.path.join(file_dir, file),
-            'question': question,
-            'answer': 'real' if 'real' in file else 'ai-generated'
-        }
-        examples.append(data)
-    return examples
-
-def load_df40_data(file, question):
-    data = pd.read_csv(file)
-    examples = []
-    for _, row in data.iterrows():
-        example_data = {} # Renamed 'data' to avoid conflict
-        example_data['image'] = row['file_path']
-        example_data['question'] = question
-        example_data['answer'] = 'real' if row['label'] == 'real' else 'ai-generated'
-        examples.append(example_data)
-    return examples
-
-# Update the progress bar
-def update_progress(pbar, correct, macro_f1):
-    ntotal = pbar.n + 1
-    pbar.set_description(f"Macro-F1: {round(macro_f1, 2)} || Accuracy: {round(correct/ntotal, 2)} / {ntotal} ")
-    pbar.update()
-
-# first responses are in batch mode
-def get_first_responses(prompt_texts, images, model_kwargs):
-    model_kwargs_copy = model_kwargs.copy()
-    prompt_texts_copy = prompt_texts.copy()
-    images_copy = images.copy()
-    
-    # tokenize the input
-    image_inputs = [[Image.open(image)] for image in images_copy]
-    
-    if len(prompt_texts_copy) == 1:
-        # tokenize the input
-    
-        if 'num_return_sequences' in model_kwargs_copy:
-            k = model_kwargs_copy['num_return_sequences']
-            del model_kwargs_copy['num_return_sequences']
-        else:
-            k = 1
-        # create a batch of prompts
-        prompts = prompt_texts_copy * k
-
-        if image_inputs:
-            image_inputs = image_inputs * k
-        else:
-            image_inputs = None
+    if 'genimage' in dataset_arg_val:
+        file_to_load = config.GENIMAGE_2K_CSV_FILE if '2k' in dataset_arg_val else config.GENIMAGE_10K_CSV_FILE
+        # Assume helpers.load_genimage_examples exists
+        examples = helpers.load_genimage_examples(file_to_load, question_str)
+    elif 'd3' in dataset_arg_val:
+        # Assume helpers.load_d3_examples exists
+        examples = helpers.load_d3_examples(config.D3_DIR, question_str)
+    elif 'df40' in dataset_arg_val:
+        file_to_load = config.DF40_2K_CSV_FILE if '2k' in dataset_arg_val else config.DF40_10K_CSV_FILE
+        # Assume helpers.load_df40_examples exists
+        examples = helpers.load_df40_examples(file_to_load, question_str)
     else:
-        prompts = prompt_texts_copy
+        print(f"Error: Dataset '{dataset_arg_val}' not recognized for path configuration.")
+        sys.exit(1)
+
+    random.seed(0) # Ensure consistent shuffle if done here, or do it after loading in main.
+    random.shuffle(examples)
+    print(f"INFO: Loaded {len(examples)} examples for dataset '{dataset_arg_val}'.")
+    return examples
+
+
+# --- Model Response Generation ---
+# get_first_responses and get_second_responses remain largely the same for LLaMA due to specific
+# image handling (Image.open) and processor calls. Minor cleanups can be done.
+
+def get_first_responses(prompt_texts, image_paths, model_kwargs_dict):
+    model_kwargs_copy = model_kwargs_dict.copy()
     
-    # Encode the prompt
-    inputs = processor(text=prompts, images=image_inputs, padding=True, return_tensors="pt", add_special_tokens=False).to(model.device)
+    # Convert image paths to PIL Images
+    pil_images = [[Image.open(image_path).convert("RGB")] for image_path in image_paths]
+
+    if len(prompt_texts) == 1:
+        k = model_kwargs_copy.pop('num_return_sequences', 1)
+        prompts = prompt_texts * k
+        final_image_inputs = pil_images * k if pil_images else None
+    else:
+        prompts = prompt_texts
+        final_image_inputs = pil_images
+    
+    inputs = processor(text=prompts, images=final_image_inputs, padding=True, return_tensors="pt", add_special_tokens=False).to(model.device)
     input_length = inputs.input_ids.shape[1]
     
-    # generate the response
     extra_args = {"return_dict_in_generate": True, "output_scores": True, "use_cache": True}
     merged_args = {**inputs, **model_kwargs_copy, **extra_args}
 
-    with torch.no_grad():  # Disable gradient computation
+    with torch.no_grad():
         outputs = model.generate(**merged_args)
     
-    # decode the response
     responses = processor.batch_decode(outputs.sequences[:, input_length:], skip_special_tokens=True, clean_up_tokenization_spaces=False)
 
-    # Free memory
-    del inputs
-    del image_inputs
-    del outputs
-    
+    del inputs, final_image_inputs, outputs
+    torch.cuda.empty_cache()
     return responses
 
-def get_second_responses(prompt_texts, first_responses, images, model_kwargs):
-    # return only 1 sequence for the second responses. query them individually not batch mode
-    model_kwargs_copy = model_kwargs.copy()
-    images_copy = images.copy()
-    
-    # tokenize the input
-    image_inputs = [[Image.open(image)] for image in images_copy]
-    
-    if 'num_return_sequences' in model_kwargs_copy:
-        del model_kwargs_copy['num_return_sequences']
-    
-    # the second responses are in greedy mode because we do not want to sample the final answer
+def get_second_responses(prompt_texts, first_responses, image_paths, model_kwargs_dict, current_answer_phrase):
+    model_kwargs_copy = model_kwargs_dict.copy()
+    model_kwargs_copy.pop('num_return_sequences', None)
     model_kwargs_copy['do_sample'] = False
 
-    second_responses = {}
+    pil_images = [[Image.open(image_path).convert("RGB")] for image_path in image_paths]
     
-    # Deleting the answer from the first response (if it exists)
-    first_cut_responses = [first_response.split(answer_phrase)[0] for first_response in first_responses]
+    first_cut_responses = [fr.split(current_answer_phrase)[0].strip() for fr in first_responses] # Added strip
 
-    # reframing the prompt with the first response
     if len(prompt_texts) == 1:
-        # tokenize the input
-        
-        prompts = [f"{prompt_texts[0]}{first_cut_response} {answer_phrase}" for first_cut_response in first_cut_responses]
-        if image_inputs:
-            image_inputs = image_inputs * len(prompts)  # Ensure alignment
-        else:
-            image_inputs = None
+        prompts = [f"{prompt_texts[0]} {first_cut} {current_answer_phrase}" for first_cut in first_cut_responses] # Added space
+        final_image_inputs = pil_images * len(prompts) if pil_images else None
     else:
-        prompts = [f"{prompt_texts[i]}{first_cut_response} {answer_phrase}" for i, first_cut_response in enumerate(first_cut_responses)]
-
-    # iterate over the prompts (prompt + first responses)
-    inputs = processor(text=prompts, images=image_inputs, padding=True, return_tensors="pt", add_special_tokens=False).to(model.device)
+        prompts = [f"{prompt_texts[i]} {first_cut_responses[i]} {current_answer_phrase}" for i in range(len(first_cut_responses))] # Added space
+        final_image_inputs = pil_images
+            
+    inputs = processor(text=prompts, images=final_image_inputs, padding=True, return_tensors="pt", add_special_tokens=False).to(model.device)
     input_length = inputs.input_ids.shape[1]
     
-    # Generate the response
     extra_args = {"return_dict_in_generate": True, "output_scores": True, "use_cache": True}
     merged_args = {**inputs, **model_kwargs_copy, **extra_args}
 
-    with torch.no_grad():  # Disable gradient computation
+    with torch.no_grad():
         outputs = model.generate(**merged_args)
 
-    # decode the response
     trimmed_sequences = outputs.sequences[:, input_length:]
-    second_responses = processor.batch_decode(trimmed_sequences, skip_special_tokens=True, clean_up_tokenization_spaces=False)
+    second_responses_decoded = processor.batch_decode(trimmed_sequences, skip_special_tokens=True, clean_up_tokenization_spaces=False)
     
-    # Free memory
-    del inputs
-    del image_inputs
-    del outputs
+    del inputs, final_image_inputs, outputs
+    torch.cuda.empty_cache()
     
-    # combine the first and second responses
-    full_responses = [f"{first_cut_responses[i]} {answer_phrase}{second_responses[i]}" for i in range(len(second_responses))] 
+    full_responses = [f"{first_cut_responses[i]} {current_answer_phrase}{second_responses_decoded[i]}" for i in range(len(second_responses_decoded))]
     return full_responses
 
-# Validate the answers
-def validate_answers(example, full_responses, labels):
-    ground_answer = example['answer'].lower().replace("(","").replace(")","")
-    pred_answer = None
-    pred_answers = []
-    rationales = []
-    for r in full_responses:
-        # Extract the answer and the rationale
-        if answer_phrase in r:        
-            rationale = r.split(answer_phrase)[0].strip()
-            pred = r.split(answer_phrase)[1].strip()
-        else:
-            rationale = ""
-            pred = r.strip()
-        # Extract the answer
-        regex = r"|".join(labels)
-        pred = re.search(regex, pred.lower())
-        if pred:
-            pred = pred.group()
-        else:
-            pred = r
-        # Append the prediction
-        pred_answers.append(pred)
-        rationales.append(rationale)
-    
-    # Set the greedy most common prediction
-    pred_answer = Counter(pred_answers).most_common(1)[0][0]
-        
-    # Calculate the score
-    cur_score = int(pred_answer == ground_answer)
-    
-    return cur_score, pred_answer, pred_answers, rationales
 
-def get_macro_f1(score, cur_score, example):
-    """
-    Calculate the macro F1 score for AI image detection.
-    
-    Classes:
-    - 'real': Images that are not AI-generated (positive class)
-    - 'ai-generated': Images that are AI-generated (negative class)
-    
-    Confusion matrix:
-    - TP: Real images correctly classified as real
-    - FN: Real images incorrectly classified as AI-generated
-    - TN: AI-generated images correctly classified as AI-generated
-    - FP: AI-generated images incorrectly classified as real
-    
-    Parameters:
-    - score: Dictionary tracking confusion matrix values
-    - cur_score: Current prediction value (1=correct, 0=incorrect)
-    - example: Dictionary containing ground truth in 'answer' field
-    
-    Returns:
-    - macro_f1: Updated F1 score
-    """
-    # Update confusion matrix based on ground truth and prediction
-    if example['answer'] == 'real':
-        if cur_score == 1:
-            # Real image correctly predicted as real (TP)
-            score['TP'] += 1
-        elif cur_score == 0:
-            # Real image incorrectly predicted as AI-generated (FN)
-            score['FN'] += 1
-    elif example['answer'] == 'ai-generated':
-        if cur_score == 1:
-            # AI-generated image correctly predicted as AI-generated (TN)
-            score['TN'] += 1
-        elif cur_score == 0:
-            # AI-generated image incorrectly predicted as real (FP)
-            score['FP'] += 1
-
-    # Calculate F1 score for positive class (real)
-    if score['TP'] + score['FP'] > 0 and score['TP'] + score['FN'] > 0:
-        prec_pos = score['TP'] / (score['TP'] + score['FP'])
-        reca_pos = score['TP'] / (score['TP'] + score['FN'])
-        f1_pos = 2 * prec_pos * reca_pos / (prec_pos + reca_pos) if (prec_pos + reca_pos) > 0 else 0
+# --- Main Evaluation Logic ---
+def eval_AI(instructions_str, current_model_str, mode_type_str, test_data_list, num_sequences_arg, current_batch_size): # Added current_batch_size
+    # Model kwargs
+    current_model_kwargs = {}
+    if num_sequences_arg == 1:
+        current_model_kwargs = {"max_new_tokens": 300, "do_sample": False, "repetition_penalty": 1, "top_k": None, "top_p": None, "temperature": 1}
     else:
-        f1_pos = 0
-    
-    # Calculate F1 score for negative class (ai-generated)
-    if score['TN'] + score['FN'] > 0 and score['TN'] + score['FP'] > 0:
-        # For the negative class, we need to treat it as its own "positive" class
-        # Precision = correctly predicted AI / all predicted as AI
-        prec_neg = score['TN'] / (score['TN'] + score['FN'])
-        # Recall = correctly predicted AI / all actual AI
-        reca_neg = score['TN'] / (score['TN'] + score['FP'])
-        f1_neg = 2 * prec_neg * reca_neg / (prec_neg + reca_neg) if (prec_neg + reca_neg) > 0 else 0
-    else:
-        f1_neg = 0
-    
-    # Macro F1 is the average of both class F1 scores
-    macro_f1 = (f1_pos + f1_neg) / 2
-    
-    return macro_f1
+        current_model_kwargs = {"max_new_tokens": 300, "do_sample": True, "repetition_penalty": 1, "top_k": None, "top_p": None, "temperature": 1, "num_return_sequences": num_sequences_arg}
 
-# Evaluate the model
-def eval_AI(instructions, model_str, mode_type, test, num_sequences): 
-    # setting the model kwargs
-    global model_kwargs
-    global dataset
-    global batch_size
-    
-    # setting the model kwargs based on the number of sequences
-    if num_sequences == 1:
-        model_kwargs = {"max_new_tokens": 300, "do_sample": False, "repetition_penalty": 1, "top_k": None, "top_p": None, "temperature": 1}
-    else:
-        model_kwargs = {"max_new_tokens": 300, "do_sample": True, "repetition_penalty": 1, "top_k": None, "top_p": None, "temperature": 1, "num_return_sequences": num_sequences}
-
-
-    rationales_data_og = {}    
-    prompt_messages_examples = []
-    # loop through the test set
-    for i, example in enumerate(test):
-        
-        # Format the prompt as a list of messages to use with chat template
+    prompt_messages_examples_list = []
+    for example_item in test_data_list:
         messages = []
-        # load the instructions
-        if instructions:
-            messages.append({
-                "role": "system", 
-                "content": [{"type": "text", "text": instructions}]
+        if instructions_str:
+            messages.append({"role": "system", "content": [{"type": "text", "text": instructions_str}]})
+        messages.append({"role": "user", "content": [{"type": "image"}, {"type": "text", "text": example_item['question']}]})
+        
+        # Use global question_phrase from config or top of script
+        prompt_text = processor.apply_chat_template(messages, tokenize=False, add_generation_prompt=True)
+        prompt_text = helpers.append_prompt_suffix_for_mode(prompt_text, mode_type_str) # USE HELPER
+        prompt_messages_examples_list.append((prompt_text, example_item)) # Storing example directly
+
+    print(f"INFO: Running LLaMA evaluation: Dataset={args.dataset}, Mode={mode_type_str}, Model={current_model_str}, NumSequences={num_sequences_arg}, BatchSize={current_batch_size}")
+
+    correct_count = 0
+    confusion_matrix_counts = {'TP': 0, 'FP': 0, 'TN': 0, 'FN': 0}
+    rationales_data_output_list = []
+    
+    # Use global answer_phrase from config or top of script
+    labels_for_validation = ['ai-generated', 'real'] # Could also be a global constant or from config
+
+    with tqdm(total=len(test_data_list), dynamic_ncols=True) as pbar:
+        actual_inference_batch_size = 1 if num_sequences_arg > 1 else current_batch_size
+        
+        for i in range(0, len(prompt_messages_examples_list), actual_inference_batch_size):
+            torch.cuda.empty_cache() # Clear cache at the start of each batch
+            
+            batch_group = prompt_messages_examples_list[i:i + actual_inference_batch_size]
+            
+            current_prompt_texts = [p[0] for p in batch_group]
+            current_examples = [p[1] for p in batch_group]
+            current_image_paths = [ex['image'] for ex in current_examples]
+
+            # Get responses
+            first_responses = get_first_responses(current_prompt_texts, current_image_paths, current_model_kwargs)
+            # Use global answer_phrase or pass it explicitly
+            full_model_responses = get_second_responses(current_prompt_texts, first_responses, current_image_paths, current_model_kwargs, answer_phrase)
+
+            # Process results for each item in the batch
+            for idx_in_batch, single_full_response in enumerate(full_model_responses):
+                example = current_examples[idx_in_batch]
+                # If actual_inference_batch_size is 1, current_prompt_texts has 1 item.
+                # If > 1, current_prompt_texts has multiple, so index it.
+                prompt_text_for_rationale = current_prompt_texts[idx_in_batch if actual_inference_batch_size > 1 else 0]
+
+                cur_score, pred_answer_val, pred_answers_list, rationales_list = helpers.validate_answers(
+                    example,
+                    [single_full_response], 
+                    labels_for_validation,
+                    answer_phrase # Use global answer_phrase
+                )
+                
+                correct_count += cur_score
+                
+                if example['answer'] == 'real':
+                    if cur_score == 1: confusion_matrix_counts['TP'] += 1
+                    else: confusion_matrix_counts['FN'] += 1
+                elif example['answer'] == 'ai-generated':
+                    if cur_score == 1: confusion_matrix_counts['TN'] += 1
+                    else: confusion_matrix_counts['FP'] += 1
+                
+                current_macro_f1 = helpers.get_macro_f1_from_counts(confusion_matrix_counts)
+                
+                rationales_data_output_list.append({
+                    "question": example['question'], "prompt": prompt_text_for_rationale, "image": example['image'],
+                    "rationales": rationales_list, 'ground_answer': example['answer'],
+                    'pred_answers': pred_answers_list, 'pred_answer': pred_answer_val, 'cur_score': cur_score
                 })
+                helpers.update_progress(pbar, correct_count, current_macro_f1 * 100) # Use F1*100 for display
 
-        
-        # load the target question
-        messages.append({"role": "user", "content": [{"type": "image"}, {"type": "text", "text": example['question']}]})
+    final_macro_f1 = helpers.get_macro_f1_from_counts(confusion_matrix_counts)
+    helpers.save_evaluation_outputs(
+        rationales_data_output_list, confusion_matrix_counts, final_macro_f1,
+        "AI_llama", args.dataset, current_model_str, mode_type_str, num_sequences_arg, config
+    )
+    return final_macro_f1
 
-        prompt_text = processor.apply_chat_template(messages, padding=True, tokenize=False, truncation=True, add_generation_prompt=True)
-        
-        if "zeroshot-cot" in mode_type:
-            prompt_text += "Let's think step by step"
+# --- Main Execution Block ---
+if __name__ == "__main__":
+    # Model Dictionaries (specific to LLaMA evaluation)
+    model_dict = {"llama3-11b": "meta-llama/Llama-3.2-11B-Vision-Instruct", 
+                  "llama3-90b": "meta-llama/Llama-3.2-90B-Vision-Instruct"}
+    processor_dict = {"llama3-11b": "meta-llama/Llama-3.2-11B-Vision-Instruct", 
+                      "llama3-90b": "meta-llama/Llama-3.2-90B-Vision-Instruct"}
+    # Assuming MllamaForConditionalGeneration is the correct class for Llama-3.2 Vision
+    VL_dict = {"llama3-11b": MllamaForConditionalGeneration,
+               "llama3-90b": MllamaForConditionalGeneration}
 
-        if "zeroshot-visualize" in mode_type:
-            prompt_text += "Let's visualize"
+    try:
+        model_name_path = model_dict[model_str]
+        processor_name_path = processor_dict[model_str]
+        vl_model_class = VL_dict[model_str]
+    except KeyError:
+        print(f"ERROR: Model string '{model_str}' not found in LLaMA dictionaries. Available: {list(model_dict.keys())}")
+        sys.exit(1)
 
-        if "zeroshot-examine" in mode_type:
-            prompt_text += "Let's examine"
+    print(f"INFO: Loading LLaMA processor: {processor_name_path}")
+    processor = AutoProcessor.from_pretrained(processor_name_path)
+    processor.padding_side = "left" # Common setting
+    if processor.tokenizer.pad_token is None and processor.tokenizer.eos_token is not None:
+        processor.tokenizer.pad_token = processor.tokenizer.eos_token
 
-        if "zeroshot-pixel" in mode_type:
-            prompt_text += "Let's examine pixel by pixel"
-
-        if "zeroshot-zoom" in mode_type:
-            prompt_text += "Let's zoom in"
-
-        if "zeroshot-flaws" in mode_type:
-            prompt_text += "Let's examine the flaws"
-
-        if "zeroshot-texture" in mode_type:
-            prompt_text += "Let's examine the textures"
-
-        if "zeroshot-style" in mode_type:
-            prompt_text += "Let's examine the style"
-
-        if "zeroshot-artifacts" in mode_type:
-            prompt_text += "Let's examine the synthesis artifacts"
-            
-        if "zeroshot-2-artifacts" in mode_type:
-            prompt_text += "Let's examine the style and the synthesis artifacts"
-
-        if "zeroshot-3-artifacts" in mode_type:
-            prompt_text += "Let's examine the synthesis artifacts and the style"
-            
-        if "zeroshot-4-artifacts" in mode_type:
-            prompt_text += "Let's observe the style and the synthesis artifacts"
-
-        if "zeroshot-5-artifacts" in mode_type:
-            prompt_text += "Let's inspect the style and the synthesis artifacts"
-
-        if "zeroshot-6-artifacts" in mode_type:
-            prompt_text += "Let's survey the style and the synthesis artifacts"
-
-        if "zeroshot-7-artifacts" in mode_type:
-            prompt_text += "Let's scrutinize the style and the synthesis artifacts"
-
-        if "zeroshot-8-artifacts" in mode_type:
-            prompt_text += "Let's analyze the style and the synthesis artifacts"
-
-        if "zeroshot-9-artifacts" in mode_type:
-            prompt_text += "Let's examine the details and the textures"
-
-        prompt_messages_examples.append((prompt_text, messages, example))
+    print(f"INFO: Loading LLaMA model: {model_name_path}")
+    model_load_kwargs = {"torch_dtype": torch.bfloat16, "device_map": "auto"}
+    model = vl_model_class.from_pretrained(model_name_path, **model_load_kwargs).eval()
     
-    print(f"Running in mode: {dataset} {mode_type} {model_str} with {model_kwargs} and {args.wait} wait repeat")
+    # Optional: Model compilation
+    print("INFO: Compiling the model (this may take a moment)...")
+    model = torch.compile(model, mode="reduce-overhead", fullgraph=True) # Or "max-autotune"
+    print("INFO: Model compilation complete.")
 
-    # Initialize the score and the rationales data
-    correct = 0
-    score = {'TP': 0, 'FP': 0, 'TN': 0, 'FN': 0}
-    rationales_data = []
-    
-    # initialize the progress bar
-    pbar = tqdm(total=len(test), dynamic_ncols=True)
+    # --- Load Dataset ---
+    # (Using the new local dispatcher `load_test_data_for_llama` which internally calls helpers)
+    images_test_data = load_test_data_for_llama(args.dataset, question_phrase)
 
-    if num_sequences > 1:
-        batch_size = 1
-    
-    # create batch of prompts
-    prompt_groups = [prompt_messages_examples[i:i+batch_size] for i in range(0, len(prompt_messages_examples), batch_size)]
+    # --- Run Evaluation ---
+    instructions_text = None # Set if you have system instructions
+    final_f1_score = eval_AI(
+        instructions_text, 
+        model_str, 
+        args.mode, 
+        images_test_data, 
+        args.num,
+        args.batch_size # Pass batch_size from args
+    )
 
-    for prompt_group in prompt_groups:
-        if batch_size > 1:
-            if pbar.n % batch_size == 0:
-                torch.cuda.empty_cache()
-        else:
-            if pbar.n % 5 == 0:
-                torch.cuda.empty_cache()
-
-        # Unpack the prompt group
-        prompt_texts = [p[0] for p in prompt_group]
-        messages = [p[1] for p in prompt_group]
-        images = [p[2]['image'] for p in prompt_group]
-        examples = [p[2] for p in prompt_group]
-
-        # first response from the model. Using the original prompt
-        first_responses = get_first_responses(prompt_texts, images, model_kwargs)
-        
-        # second responses
-        full_responses = get_second_responses(prompt_texts, first_responses, images, model_kwargs)
-
-        # labels
-        labels = ['ai-generated', 'real']
-        
-        if len(prompt_texts) == 1:
-            example = examples[0]
-            prompt_text = prompt_texts[0]
-
-            # validate the responses
-            cur_score, pred_answer, pred_answers, rationales = validate_answers(example, full_responses, labels)
-            
-            # update correct
-            correct += cur_score
-            
-            # update the score and get macro f1
-            macro_f1 = get_macro_f1(score, cur_score, example)
-            
-            # append the rationales data
-            rationales_data.append({"question": example['question'], "prompt": prompt_text, "image": example['image'], "rationales": rationales, 'ground_answer': example['answer'], 'pred_answers': pred_answers, 'pred_answer': pred_answer, 'cur_score': cur_score})
-            
-            # update the progress bar
-            update_progress(pbar, correct, macro_f1)
-        else:
-            for full_response, prompt_text, example in zip(full_responses, prompt_texts, examples):
-                # validate the responses
-                cur_score, pred_answer, pred_answers, rationales = validate_answers(example, [full_response], labels)
-                
-                # update correct
-                correct += cur_score
-                
-                # update the score and get macro f1
-                macro_f1 = get_macro_f1(score, cur_score, example)
-                
-                # append the rationales data
-                rationales_data.append({"question": example['question'], "prompt": prompt_text, "image": example['image'], "rationales": rationales, 'ground_answer': example['answer'], 'pred_answers': pred_answers, 'pred_answer': pred_answer, 'cur_score': cur_score})
-                
-                # update the progress bar
-                update_progress(pbar, correct, macro_f1)
-    
-    config.RESPONSES_DIR.mkdir(parents=True, exist_ok=True)
-    config.SCORES_DIR.mkdir(parents=True, exist_ok=True)
-    
-    # Construct filenames (without 'wait' parameter)
-    base_filename_part = f"AI_llama-{args.dataset}-{model_str}-{mode_type}-n{num_sequences}"
-    
-    rationales_filename = f"{base_filename_part}-rationales.jsonl"
-    rationales_file_path = config.RESPONSES_DIR / rationales_filename
-    with open(rationales_file_path, 'w') as file:
-        json.dump(rationales_data, file, indent=4)
-    print(f"Rationales data saved to {rationales_file_path}")
-
-    scores_filename_json = f"{base_filename_part}-scores.json"
-    scores_file_path_json = config.SCORES_DIR / scores_filename_json
-    with open(scores_file_path_json, 'w') as file:
-        json.dump(score, file, indent=4) # 'score' here is the confusion matrix dict
-    print(f"Scores data (JSON) saved to {scores_file_path_json}")
-    return macro_f1
-
-# Load the model
-model_dict = {"llama3-11b": "meta-llama/Llama-3.2-11B-Vision-Instruct", "llama3-90b": "meta-llama/Llama-3.2-90B-Vision-Instruct"}
-
-processor_dict = {"llama3-11b": "meta-llama/Llama-3.2-11B-Vision-Instruct", "llama3-90b": "meta-llama/Llama-3.2-90B-Vision-Instruct"}
-
-VL_dict = {"llama3-11b": MllamaForConditionalGeneration,
-            "llama3-90b": MllamaForConditionalGeneration}
-
-# Check if the model string is valid
-model_name = model_dict[model_str]
-processor_name = processor_dict[model_str]
-vl = VL_dict[model_str]
-processor = AutoProcessor.from_pretrained(processor_name)
-processor.padding_side = "left"
-
-# Load the dataset
-instructions = None
-dataset = args.dataset
-question_phrase = "Is this image real or AI-generated?"
-answer_phrase = "Final Answer(real/ai-generated):"
-# In the "Load the dataset" section
-# ...
-dataset_arg = args.dataset # dataset comes from argparse
-question_phrase = "Is this image real or AI-generated?"
-answer_phrase = "Final Answer(real/ai-generated):" # This was already here
-
-if 'genimage' in dataset_arg:
-    if '2k' in dataset_arg:
-        images_test = load_genimage_data(config.GENIMAGE_2K_CSV_FILE, question_phrase)
-    else:
-        images_test = load_genimage_data(config.GENIMAGE_10K_CSV_FILE, question_phrase)
-elif 'd3' in dataset_arg:
-    # Assuming load_d3_data expects the directory containing the images,
-    # not a CSV (as per its definition in evaluate_AI_qwen.py)
-    images_test = load_d3_data(config.D3_DIR, question_phrase)
-    # ... (rest of d3 processing logic remains the same, using images_test)
-elif 'df40' in dataset_arg:
-    if '2k' in dataset_arg:
-        images_test = load_df40_data(config.DF40_2K_CSV_FILE, question_phrase)
-    else:
-        images_test = load_df40_data(config.DF40_10K_CSV_FILE, question_phrase)
-else:
-    print(f"Error: Dataset '{dataset_arg}' not recognized for path configuration.")
-    sys.exit(1) # Or handle error appropriately
-
-# shuffling
-random.seed(0)
-random.shuffle(images_test)
-
-# Initialize a dictionary to store the scores
-scores_dict = {}
-
-# Evaluate the model
-mode = args.mode
-
-num = args.num
-
-scores_dict[f'{mode}-n{num}'] = eval_AI(instructions, model_str, mode, images_test, num)
-
-# Convert the scores dictionary to a pandas DataFrame
-scores_df = pd.DataFrame.from_dict(scores_dict, orient='index')
-
-# At the end of the script, for the CSV scores file:
-# Construct filename (without 'wait' parameter)
-# Note: The original script uses 'args.mode' and 'args.num' here, which are from argparse
-csv_scores_filename = f'AI_llama-{args.dataset}-{model_str}-{args.mode}-n{args.num}-scores.csv'
-csv_file_path = config.SCORES_DIR / csv_scores_filename
-scores_df.to_csv(csv_file_path, index=True) # scores_df is the pandas DataFrame
-print(f"Scores CSV saved to {csv_file_path}")
+    print(f"\nINFO: Evaluation finished for LLaMA model: {model_str} on dataset: {args.dataset} with mode: {args.mode}-n{args.num}")
+    print(f"Final Macro F1: {final_f1_score:.4f}")

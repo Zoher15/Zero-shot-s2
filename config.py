@@ -50,5 +50,5 @@ EVAL_ANSWER_PHRASE = "Final Answer(real/ai-generated):"
 # --- Potentially other configurations ---
 # Example: NLTK data path if you want to manage it centrally, though NLTK usually handles this.
 # NLTK_DATA_DIR = PROJECT_ROOT / "nltk_data"
-
+ZERO_PAD_SCORE_TABLES = True
 # You can also add other global settings here if needed later.

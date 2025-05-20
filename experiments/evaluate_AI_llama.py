@@ -269,7 +269,7 @@ if __name__ == "__main__":
     
     logger.info("Compiling the Llama model (this may take a moment)...")
     try: # CHANGED: Added try-except for compilation
-        model = torch.compile(model, mode="reduce-overhead", fullgraph=True)
+        model = torch.compile(model, mode="max-autotune", fullgraph=True)
         logger.info("Llama model compilation complete.")
     except Exception as e:
         logger.warning(f"Llama model compilation failed: {e}. Proceeding without compilation.")

@@ -18,8 +18,7 @@ Our findings highlight that task-aligned prompts can effectively elicit and enha
   - [1. Clone the Repository](#1-clone-the-repository)
   - [2. Create a Virtual Environment](#2-create-a-virtual-environment)
   - [3. Install Dependencies](#3-install-dependencies)
-  - [4. Download NLTK Resources](#4-download-nltk-resources)
-  - [5. Data Preparation](#5-data-preparation)
+  - [4. Data Preparation](#4-data-preparation)
 - [Configuration](#configuration)
 - [Usage](#usage)
   - [Running Experiments](#running-experiments)
@@ -27,7 +26,7 @@ Our findings highlight that task-aligned prompts can effectively elicit and enha
     - [Example: Evaluating CoDE model on GenImage (2k sample)](#example-evaluating-code-model-on-genimage-2k-sample)
   - [Generating Result Tables and Plots](#generating-result-tables-and-plots)
     - [Example: Generating the Scaling Consistency Plot](#example-generating-the-scaling-consistency-plot)
-  - [Downloading and Preprocessing D3 Dataset Images](#downloading-and-preprocessing-d3-dataset-images)
+  - [Downloading and Preprocessing D3 Dataset Images](https://www.google.com/search?q=%23downloading-and-preprocessing-d3-dataset-images)
 - [Expected Outputs](#expected-outputs)
 - [Troubleshooting](#troubleshooting)
 - [License](#license)
@@ -44,8 +43,8 @@ Zero-shot-s2/
 ├── config.py            \# Central configuration for paths and global parameters
 ├── data/                \# Placeholder for input datasets (managed via .gitignore)
 │   ├── d3/              \# D3 dataset images and metadata CSV
-│   ├── df40/            \# DF40 dataset CSVs
-│   └── genimage/        \# GenImage dataset CSVs
+│   ├── df40/            \# DF40 dataset CSVs and image subfolders
+│   └── genimage/        \# GenImage dataset CSVs and image subfolders
 ├── experiments/         \# Scripts for running evaluations and data processing
 │   ├── evaluate\_AI\_llama.py
 │   ├── evaluate\_AI\_qwen.py
@@ -116,44 +115,94 @@ Install the required Python packages using the provided `requirements.txt` file:
 pip install -r requirements.txt
 ```
 
-### 4\. Download NLTK Resources
+*(Note: Some scripts, e.g., in `results/`, may require NLTK resources like WordNet, stopwords, and punkt. Utilities within the project, such as `utils/helpers.py` or specific scripts like `results/distinct_words.py`, attempt to download these automatically if they are missing. See Troubleshooting for NLTK `LookupError` if issues arise.)*
 
-Some scripts (e.g., `results/distinct_words.py`) require NLTK resources like WordNet and stopwords. The `utils/helpers.py` script attempts to download them if not found, but you can also pre-download them:
-
-```bash
-python -m nltk.downloader wordnet stopwords punkt
-```
-
-Alternatively, running a script like `results/distinct_words.py` once will trigger the automatic download if resources are missing.
-
-### 5\. Data Preparation
+### 4\. Data Preparation
 
 This project requires several datasets. Due to their size, they are not included directly in the repository. You need to download them and organize them according to the structure defined in `config.py`. By default, scripts expect datasets to be in the `Zero-shot-s2/data/` directory.
 
-The expected structure within `data/` is:
+The original sources for the datasets are:
+
+  * **D3 (and CoDE)**: [https://github.com/aimagelab/CoDE](https://github.com/aimagelab/CoDE)
+  * **GenImage**: [https://github.com/GenImage-Dataset/GenImage](https://github.com/GenImage-Dataset/GenImage)
+  * **DF40**: [https://github.com/YZY-stack/DF40](https://github.com/YZY-stack/DF40)
+
+The expected structure within `data/` after preparation is:
 
 ```
 Zero-shot-s2/
 └── data/
     ├── d3/
-    │   └── 2k_sample_ids_d3.csv # CSV for D3 image IDs (actual images downloaded by load_d3.py)
+    │   └── 2k_sample_ids_d3.csv # CSV for D3 image IDs
     │   └── (images will be saved here by load_d3.py)
     ├── df40/
     │   ├── 10k_sample_df40.csv
     │   └── 2k_sample_df40.csv
+    │   └── Collabdiff/
+    │   │   └── ... images ...
+    │   └── MidJourney/
+    │   │   └── ... images ...
+    │   └── stargan/
+    │   │   └── ... images ...
+    │   └── starganv2/
+    │   │   └── ... images ...
+    │   └── styleclip/
+    │   │   └── ... images ...
+    │   └── whichfaceisreal/
+    │       └── ... images ...
     └── genimage/
         ├── 10k_random_sample.csv
         └── 2k_random_sample.csv
+        └── ADM/
+        │   └── ... images ...
+        └── BigGAN/
+        │   └── ... images ...
+        └── ... etc. for all generators ...
 ```
 
-  * **D3 Dataset**:
-      * The D3 dataset requires an ID CSV file. By default, `config.py` is set up to use `data/d3/2k_sample_ids_d3.csv` (defined in `config.D3_CSV_FILE`). Ensure this file exists at this location or update `config.py` accordingly. The script `experiments/load_d3.py` will save downloaded images into the directory specified by `config.D3_DIR` (default: `data/d3/`). The CSV file must contain a column named 'id'.
-      * Use the `experiments/load_d3.py` script
-  * **Other Datasets (DF40, GenImage)**:
-      * Place the respective CSV files in their designated directories as shown above (`data/df40/` and `data/genimage/`). The specific filenames for CSVs are defined in `config.py` (e.g., `config.GENIMAGE_2K_CSV_FILE`, `config.DF40_2K_CSV_FILE`). The image paths within these CSVs should be relative to a common base or be absolute paths that your system can access.
+  * **D3 Dataset**: ([Original source](https://github.com/aimagelab/CoDE))
+
+      * **Image Files**: The D3 dataset images are downloaded using a script.
+          * The script `experiments/load_d3.py` will download and save images based on an ID CSV file.
+          * See the [Downloading and Preprocessing D3 Dataset Images](https://www.google.com/search?q=%23downloading-and-preprocessing-d3-dataset-images) section for usage. Images will be saved into the directory specified by `config.D3_DIR` (default: `data/d3/`).
+      * **CSV File**: By default, `config.py` is set up to use `data/d3/2k_sample_ids_d3.csv` (defined in `config.D3_CSV_FILE`). Ensure this file exists at this location or update `config.py`. The CSV file must contain a column named 'id'.
+
+  * **DF40 Dataset**: ([Original source](https://github.com/YZY-stack/DF40))
+
+      * **Image Files**:
+          * Download the required .zip files from the [Google Drive link](https://www.google.com/search?q=https://drive.google.com/drive/folders/1980LCMAutfWvV6zvdxhoeIa67TmzKLQ_)
+          * You only need to download and unzip the archives for the following generators: `Collabdiff`, `MidJourney`, `stargan`, `starganv2`, `styleclip`, and `whichfaceisreal`. These were chosen because they include real image counterparts.
+          * For each downloaded .zip file (e.g., `Collabdiff.zip`), extract its contents into the `Zero-shot-s2/data/df40/` directory. This will typically create a subdirectory named after the archive (e.g., `Zero-shot-s2/data/df40/Collabdiff/`).
+            ```bash
+            # Example:
+            # cd path/to/Zero-shot-s2/data/df40/
+            # unzip Collabdiff.zip
+            # unzip MidJourney.zip
+            # ... and so on for the specified folders.
+            ```
+          * Ensure the extracted image folders are located directly within `Zero-shot-s2/data/df40/`.
+      * **CSV Files**: Place the respective CSV files (`10k_sample_df40.csv`, `2k_sample_df40.csv`) in the `Zero-shot-s2/data/df40/` directory. The specific filenames for CSVs are defined in `config.py` (e.g., `config.DF40_2K_CSV_FILE`). The image paths within these CSVs should be relative to the `data/df40/` directory (e.g., `Collabdiff/image_001.png`, `whichfaceisreal/real/abc.png`) or be absolute paths that your system can access, corresponding to the extracted image locations.
+
+  * **GenImage Dataset**: ([Original source](https://github.com/GenImage-Dataset/GenImage))
+
+      * **Image Files**:
+          * Download all image archives from the following [Google Drive link](https://drive.google.com/drive/folders/1jGt10bwTbhEZuGXLyvrCuxOI0cBqQ1FS).
+          * The Drive folder contains subfolders for each generator (ADM, BigGAN, glide, Midjourney, stable\_diffusion\_v\_1\_4, stable\_diffusion\_v\_1\_5, VQDM, wukong). Inside each, you will find multipart zip files (e.g., `imagenet_ai_0508_adm.zip.001`, `imagenet_ai_0508_adm.zip.002`).
+          * Download these multipart zip files for each generator you intend to use.
+          * You need to extract these images into the `Zero-shot-s2/data/genimage/` directory, creating subdirectories for each generator.
+          * Use a tool like 7-Zip to extract the multipart archives. For example, to extract images for the ADM generator, ensure all its parts (e.g., `imagenet_ai_0508_adm.zip.001`, `imagenet_ai_0508_adm.zip.002`, etc.) are in the same temporary directory. Then, run the extraction command on the first part file:
+            ```bash
+            # Example for ADM:
+            # cd /path/to/downloaded_adm_parts/
+            # 7z x imagenet_ai_0508_adm.zip.001 -o /path/to/Zero-shot-s2/data/genimage/ADM
+            ```
+            This command tells 7-Zip to extract `imagenet_ai_0508_adm.zip.001` and it will automatically find the other parts. The `-o` flag specifies the output directory, creating an `ADM` subfolder inside `Zero-shot-s2/data/genimage/`. Repeat for all generator folders, adjusting the output path accordingly (e.g., `-o /path/to/Zero-shot-s2/data/genimage/BigGAN`).
+          * The final structure should result in folders like `Zero-shot-s2/data/genimage/ADM/`, `Zero-shot-s2/data/genimage/BigGAN/`, etc., each containing the respective images.
+      * **CSV Files**: Place the respective CSV files (`10k_random_sample.csv`, `2k_random_sample.csv`) in the `Zero-shot-s2/data/genimage/` directory. The specific filenames for CSVs are defined in `config.py` (e.g., `config.GENIMAGE_2K_CSV_FILE`). The image paths within these CSVs should be relative to the `data/genimage/` directory (e.g., `ADM/image1.png`) or be absolute paths that your system can access, corresponding to the extracted image locations.
+
   * **Large Data Files**: Large data files and directories within `data/` (like image folders) should be added to your local `.gitignore` file if they are not already, to prevent accidental versioning. The provided `.gitignore` may already cover common patterns.
 
-*(Consider adding specific download links or detailed instructions for acquiring each dataset if publicly available and permissible.)*
+*(For detailed information on dataset contents and structure, please refer to their original repositories linked above.)*
 
 ## Configuration
 
@@ -273,7 +322,10 @@ A log file (`load_d3_processing.log` by default, path configured by `config.LOAD
       * Ensure PyTorch is installed with the correct CUDA version matching your system's CUDA drivers and GPU architecture.
       * Check if the correct GPU is visible and selected (e.g., via the `-c` argument in evaluation scripts or `CUDA_VISIBLE_DEVICES` environment variable).
   * **NLTK `LookupError`**:
-      * Run the NLTK resource download command provided in the "Setup" section. Some scripts might also attempt to download these resources automatically if missing.
+      * Ensure NLTK resources (like WordNet, stopwords, punkt) are downloaded. Some scripts (e.g., `results/distinct_words.py`) or utilities (e.g., in `utils/helpers.py`) attempt to download these automatically upon first run if missing. If issues persist, you can try manually downloading them:
+        ```bash
+        python -m nltk.downloader wordnet stopwords punkt
+        ```
   * **Incorrect File Paths in Scripts**:
       * This should be minimal if `config.py` is used correctly. If you suspect a path issue within a script, verify it's using a variable from `config.py` rather than a hardcoded path.
 

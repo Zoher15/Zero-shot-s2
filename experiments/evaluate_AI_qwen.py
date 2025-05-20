@@ -289,7 +289,7 @@ if __name__ == "__main__":
 
     logger.info("Compiling the Qwen model (this may take a moment)...")
     try:
-        model = torch.compile(model, mode="reduce-overhead", fullgraph=True)
+        model = torch.compile(model, mode="max-autotune", fullgraph=True)
         logger.info("Qwen model compilation complete.")
     except Exception as e:
         logger.warning(f"Qwen model compilation failed: {e}. Proceeding without compilation.")

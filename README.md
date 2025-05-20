@@ -1,4 +1,4 @@
-# Zero-shot-s2: Task-aligned prompting improves zero-shot detection of AI-generated images by Vision-Language Models
+# Zero-shot-s<sup>2</sup>: Task-aligned prompting improves zero-shot detection of AI-generated images by Vision-Language Models
 
 ## Overview
 
@@ -74,7 +74,7 @@ Zero-shot-s2/
 
 ## Prerequisites
 
-* Python (e.g., 3.8+ recommended, verify based on `requirements.txt`)
+* Python (e.g., 3.10+ recommended, verify based on `requirements.txt`)
 * `pip` (Python package installer)
 * (Optional) Conda for environment management
 * (Optional but Recommended for speed) NVIDIA GPU with CUDA installed for model inference (refer to PyTorch and Transformers documentation for compatible CUDA versions).
@@ -102,7 +102,7 @@ source venv/bin/activate  # On Windows use: venv\Scripts\activate
 **Using `conda`:**
 
 ```bash
-conda create -n zeroshot_s2 python=3.9  # Or your preferred Python version
+conda create -n zeroshot_s2 python=3.10.14
 conda activate zeroshot_s2
 ```
 

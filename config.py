@@ -10,10 +10,10 @@ PROJECT_ROOT = Path(__file__).resolve().parent
 DATA_DIR = PROJECT_ROOT / "data"
 
 # Specific dataset paths
-D3_DIR = DATA_DIR / "D3"
-D3_CSV_FILE = D3_DIR / "D3_2k_sample.csv" # Example, make sure filename matches
+D3_DIR = DATA_DIR / "d3"
+D3_CSV_FILE = D3_DIR / "2k_sample_ids_d3.csv" # Example, make sure filename matches
 
-DF40_DIR = DATA_DIR / "DF40"
+DF40_DIR = DATA_DIR / "df40"
 DF40_10K_CSV_FILE = DF40_DIR / "10k_sample_df40.csv"
 DF40_2K_CSV_FILE = DF40_DIR / "2k_sample_df40.csv"
 

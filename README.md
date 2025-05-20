@@ -264,8 +264,6 @@ A log file (`load_d3_processing.log` by default, path configured by `config.LOAD
 
 ## License
 
-*(To be added. Choose a license, e.g., MIT, Apache 2.0, and add a `LICENSE.md` file. Example below assumes MIT License.)*
-
 This project is licensed under the MIT License - see the `LICENSE.md` file for details.
 
 ## Citation

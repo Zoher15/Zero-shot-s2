@@ -1,259 +1,71 @@
+# Core ML/DL Frameworks & Accelerators
 accelerate==0.32.1
-aiofiles==24.1.0
-aiohttp==3.9.5
-aiosignal==1.3.1
-annotated-types==0.7.0
-anyio==4.4.0
-astor==0.8.1
-asttokens @ file:///opt/conda/conda-bld/asttokens_1646925590279/work
-async-timeout==4.0.3
-attrdict==2.0.1
-attrs==23.2.0
-av==14.0.1
-backoff==2.2.1
-beautifulsoup4 @ file:///croot/beautifulsoup4-split_1718029820055/work
 bitsandbytes==0.45.5
-blake3==1.0.4
-cachetools==5.5.2
-causal-conv1d==1.4.0
-certifi==2024.7.4
-cffi @ file:///home/conda/feedstock_root/build_artifacts/cffi_1723018374300/work
-charset-normalizer==3.3.2
-click==8.1.7
-cloudpickle==3.1.1
-colorlog==6.8.2
-comm @ file:///home/conda/feedstock_root/build_artifacts/comm_1710320294760/work
-compressed-tensors==0.9.3
-contourpy==1.3.0
-cupy-cuda12x==13.4.1
-cycler==0.12.1
-datasets==2.20.0
-debugpy @ file:///croot/debugpy_1690905042057/work
-decorator @ file:///opt/conda/conda-bld/decorator_1643638310831/work
-deepspeed==0.14.4
-Deprecated==1.2.18
-depyf==0.18.0
-dill==0.3.8
-diskcache==5.6.3
-distro==1.9.0
-dnspython==2.7.0
-docstring_parser==0.16
-dspy==2.5.20
-dspy-ai==2.4.17
 einops==0.8.0
-email_validator==2.2.0
-exceptiongroup @ file:///home/conda/feedstock_root/build_artifacts/exceptiongroup_1720869315914/work
-executing @ file:///opt/conda/conda-bld/executing_1646925071911/work
-faiss==1.8.0
-fastapi==0.115.12
-fastapi-cli==0.0.7
-fastrlock==0.8.3
-ffmpy==0.5.0
-filelock==3.18.0
 flash-attn==2.7.4.post1
-fonttools==4.53.1
-frozenlist==1.4.1
-fschat==0.2.36
-fsspec==2024.5.0
-gguf==0.16.2
-googleapis-common-protos==1.70.0
-gradio==5.27.0
-gradio_client==1.9.0
-greenlet==3.0.3
-groovy==0.1.2
-grpcio==1.71.0
-h11==0.14.0
-hf-xet==1.0.3
-hjson==3.1.0
-httpcore==1.0.5
-httptools==0.6.4
-httpx==0.27.0
 huggingface-hub==0.30.2
-idna==3.7
-importlib_metadata @ file:///home/conda/feedstock_root/build_artifacts/importlib-metadata_1710971335535/work
-interegular==0.3.3
-ipykernel @ file:///home/conda/feedstock_root/build_artifacts/ipykernel_1708996548741/work
-ipython @ file:///croot/ipython_1704833016303/work
-jedi @ file:///tmp/build/80754af9/jedi_1644315229345/work
-Jinja2==3.1.6
-jiter==0.6.1
-joblib==1.4.2
-json_repair==0.30.0
-jsonschema==4.23.0
-jsonschema-specifications==2024.10.1
-jupyter_client @ file:///home/conda/feedstock_root/build_artifacts/jupyter_client_1710255804825/work
-jupyter_core @ file:///home/conda/feedstock_root/build_artifacts/jupyter_core_1710257277185/work
-kiwisolver==1.4.7
-lark==1.2.2
-latex2mathml==3.77.0
-lit==18.1.8
-litellm==1.49.1
-llguidance==0.7.19
-llvmlite==0.44.0
-lm-format-enforcer==0.10.11
-magicattr==0.1.6
-Mako==1.3.5
-mamba-ssm==2.2.2
-markdown-it-py==3.0.0
-markdown2==2.5.3
-MarkupSafe==2.1.5
-matplotlib==3.9.2
-matplotlib-inline @ file:///opt/conda/conda-bld/matplotlib-inline_1662014470464/work
-mdurl==0.1.2
-mistral_common==1.5.4
-mpmath==1.3.0
-msgpack==1.1.0
-msgspec==0.19.0
-multidict==6.0.5
-multiprocess==0.70.16
-nest_asyncio @ file:///home/conda/feedstock_root/build_artifacts/nest-asyncio_1705850609492/work
-networkx==3.3
-nh3==0.2.21
-ninja==1.11.1.1
-nltk==3.9.1
-numba==0.61.2
-numpy @ file:///croot/numpy_and_numpy_base_1708638617955/work/dist/numpy-1.26.4-cp310-cp310-linux_x86_64.whl#sha256=ce136f308f566617937abac6c8f280bd61b41c12ab7eb7d8784c5795c5be477b
-nvidia-cublas-cu11==11.10.3.66
-nvidia-cublas-cu12==12.6.4.1
-nvidia-cuda-cupti-cu11==11.7.101
-nvidia-cuda-cupti-cu12==12.6.80
-nvidia-cuda-nvrtc-cu11==11.7.99
-nvidia-cuda-nvrtc-cu12==12.6.77
-nvidia-cuda-runtime-cu11==11.7.99
-nvidia-cuda-runtime-cu12==12.6.77
-nvidia-cudnn-cu11==8.5.0.96
-nvidia-cudnn-cu12==9.5.1.17
-nvidia-cufft-cu11==10.9.0.58
-nvidia-cufft-cu12==11.3.0.4
-nvidia-cufile-cu12==1.11.1.6
-nvidia-curand-cu11==10.2.10.91
-nvidia-curand-cu12==10.3.7.77
-nvidia-cusolver-cu11==11.4.0.1
-nvidia-cusolver-cu12==11.7.1.2
-nvidia-cusparse-cu11==11.7.4.91
-nvidia-cusparse-cu12==12.5.4.2
-nvidia-cusparselt-cu12==0.6.3
-nvidia-ml-py==12.555.43
-nvidia-nccl-cu11==2.14.3
-nvidia-nccl-cu12==2.26.2
-nvidia-nvjitlink-cu12==12.6.85
-nvidia-nvtx-cu11==11.7.91
-nvidia-nvtx-cu12==12.6.77
-nvitop @ file:///home/conda/feedstock_root/build_artifacts/nvitop_1737914730711/work
-openai==1.52.2
-opencv-python-headless==4.11.0.86
-opentelemetry-api==1.26.0
-opentelemetry-exporter-otlp==1.26.0
-opentelemetry-exporter-otlp-proto-common==1.26.0
-opentelemetry-exporter-otlp-proto-grpc==1.26.0
-opentelemetry-exporter-otlp-proto-http==1.26.0
-opentelemetry-proto==1.26.0
-opentelemetry-sdk==1.26.0
-opentelemetry-semantic-conventions==0.47b0
-opentelemetry-semantic-conventions-ai==0.4.3
-optuna==3.6.1
-orjson==3.10.16
-outlines==0.1.11
-outlines_core==0.1.26
-packaging @ file:///home/conda/feedstock_root/build_artifacts/packaging_1710075952259/work
+numpy==1.26.4 # From numpy @ file:///... resolved to a specific version
+packaging==23.2 # From packaging @ file:///... likely resolves to a version like this, check your pip freeze
 pandas==2.2.2
-parso @ file:///opt/conda/conda-bld/parso_1641458642106/work
-partial-json-parser==0.2.1.1.post5
 peft==0.12.0
-pexpect @ file:///tmp/build/80754af9/pexpect_1605563209008/work
-pillow==10.4.0
-platformdirs @ file:///home/conda/feedstock_root/build_artifacts/platformdirs_1713912794367/work
-praw==7.8.1
-prawcore==2.4.0
-prometheus-fastapi-instrumentator==7.1.0
-prometheus_client==0.21.1
-prompt-toolkit @ file:///croot/prompt-toolkit_1704404351921/work
+Pillow==10.4.0
 protobuf==4.25.7
-psutil @ file:///home/conda/feedstock_root/build_artifacts/psutil_1705722392846/work
-ptyprocess @ file:///tmp/build/80754af9/ptyprocess_1609355006118/work/dist/ptyprocess-0.7.0-py2.py3-none-any.whl
-pure-eval @ file:///opt/conda/conda-bld/pure_eval_1646925070566/work
-py-cpuinfo==9.0.0
-py-readability-metrics==1.4.5
-pyarrow==16.1.0
-pyarrow-hotfix==0.6
-pycountry==24.6.1
-pycparser @ file:///home/conda/feedstock_root/build_artifacts/bld/rattler-build_pycparser_1733195786/work
-pydantic==2.11.3
-pydantic_core==2.33.1
-pydub==0.25.1
-Pygments @ file:///croot/pygments_1684279966437/work
-pyparsing==3.1.4
-python-dateutil @ file:///home/conda/feedstock_root/build_artifacts/python-dateutil_1709299778482/work
-python-dotenv==1.0.1
-python-json-logger==3.3.0
-python-multipart==0.0.20
-pytz==2024.1
+python-dateutil==2.9.0.post0 # From python-dateutil @ file:///...
 PyYAML==6.0.1
-pyzmq @ file:///croot/pyzmq_1705605076900/work
 qwen-vl-utils==0.0.8
-ray==2.43.0
-referencing==0.35.1
 regex==2024.5.15
 requests==2.32.3
-rich==13.7.1
-rich-toolkit==0.14.3
-rpds-py==0.20.0
-ruff==0.11.7
-safehttpx==0.1.6
 safetensors==0.4.3
 scikit-learn==1.5.1
 scipy==1.14.0
-seaborn==0.13.2
-semantic-version==2.10.0
-sentence-transformers==3.0.1
 sentencepiece==0.2.0
-shellingham==1.5.4
-shortuuid==1.0.13
-shtab==1.7.1
-six @ file:///tmp/build/80754af9/six_1644875935023/work
-sniffio==1.3.1
-soupsieve @ file:///croot/soupsieve_1696347547217/work
-SQLAlchemy==2.0.31
-stack-data @ file:///opt/conda/conda-bld/stack_data_1646927590127/work
-starlette==0.46.2
-structlog==24.2.0
-svgwrite==1.4.3
-sympy==1.13.3
-threadpoolctl==3.5.0
-tiktoken==0.8.0
-timm==1.0.15
-tokenizers==0.21.1
-tomlkit==0.13.2
+tokenizers==0.21.1 # From your files, ensure this is the main tokenizers package, not another `tokenizers`
 torch==2.7.0+cu126
 torchaudio==2.7.0+cu126
-torcheval==0.0.7
 torchvision==0.22.0+cu126
-tornado @ file:///home/conda/feedstock_root/build_artifacts/tornado_1708363098266/work
 tqdm==4.66.4
-traitlets @ file:///croot/traitlets_1671143879854/work
 transformers==4.51.3
-transformers-stream-generator==0.0.5
-triton==3.3.0
 trl==0.9.6
-typer==0.15.2
-typing-inspection==0.4.0
-typing_extensions==4.12.2
-tyro==0.8.6
-tzdata==2024.1
-ujson==5.10.0
-update-checker==0.18.0
-urllib3==2.2.2
-uvicorn==0.34.2
-uvloop==0.21.0
-watchfiles==1.0.5
-wavedrom==2.0.3.post3
-wcwidth @ file:///Users/ktietz/demo/mc3/conda-bld/wcwidth_1629357192024/work
-websocket-client==1.8.0
-websockets==15.0.1
+
+# Data Handling & Scientific Computing (already covered above but good to categorize)
+# numpy, pandas, scikit-learn, scipy
+
+# Plotting & Visualization
+cycler==0.12.1 # matplotlib dependency
+fonttools==4.53.1 # matplotlib dependency
+kiwisolver==1.4.7 # matplotlib dependency
+matplotlib==3.9.2
+# pyparsing is a common dependency, but your reqs has pyparsing==3.1.4
+pyparsing==3.1.4
 wordcloud==1.9.4
-wrapt==1.17.2
-xgrammar==0.1.18
-xxhash==3.4.1
-yarl==1.9.4
-zipp @ file:///home/conda/feedstock_root/build_artifacts/zipp_1695255097490/work
-zstandard==0.23.0
+
+# NLP Utilities
+nltk==3.9.1
+
+# File/Data Interaction
+datasets==2.20.0
+filelock==3.18.0 # Often used by huggingface_hub, transformers
+
+# Timezone data for pandas
+pytz==2024.1
+tzdata==2024.1
+
+# NVIDIA GPU Libraries (CRITICAL: Ensure these match your target CUDA environment)
+# These are taken directly from your original file for CUDA 12.x focus
+nvidia-cublas-cu12==12.6.4.1
+nvidia-cuda-cupti-cu12==12.6.80
+nvidia-cuda-nvrtc-cu12==12.6.77
+nvidia-cuda-runtime-cu12==12.6.77
+nvidia-cudnn-cu12==9.5.1.17
+nvidia-cufft-cu12==11.3.0.4
+nvidia-cufile-cu12==1.11.1.6
+nvidia-curand-cu12==10.3.7.77
+nvidia-cusolver-cu12==11.7.1.2
+nvidia-cusparse-cu12==12.5.4.2
+nvidia-cusparselt-cu12==0.6.3
+# nvidia-ml-py==12.555.43 # For NVIDIA GPU monitoring, if needed
+nvidia-nccl-cu12==2.26.2
+nvidia-nvjitlink-cu12==12.6.85
+nvidia-nvtx-cu12==12.6.77
+# Note: Your original file also had cu11 versions. I've focused on cu12 based on torch version.
+# If you need cu11, those would need to be added back and torch recompiled/reinstalled for cu11.

@@ -24,9 +24,10 @@ Our findings highlight that task-aligned prompts can effectively elicit and enha
 - [Usage](#usage)
   - [Running Experiments](#running-experiments)
     - [Example: Evaluating Qwen2.5 7B on GenImage (2k sample)](#example-evaluating-qwen25-7b-on-genimage-2k-sample)
+    - [Example: Evaluating CoDE model on GenImage (2k sample)](#example-evaluating-code-model-on-genimage-2k-sample)
   - [Generating Result Tables and Plots](#generating-result-tables-and-plots)
     - [Example: Generating the Scaling Consistency Plot](#example-generating-the-scaling-consistency-plot)
-  - [Downloading and Preprocessing D3 Dataset Images](https://www.google.com/search?q=%23downloading-and-preprocessing-d3-dataset-images)
+  - [Downloading and Preprocessing D3 Dataset Images](#downloading-and-preprocessing-d3-dataset-images)
 - [Expected Outputs](#expected-outputs)
 - [Troubleshooting](#troubleshooting)
 - [License](#license)
@@ -48,6 +49,7 @@ Zero-shot-s2/
 ├── experiments/         \# Scripts for running evaluations and data processing
 │   ├── evaluate\_AI\_llama.py
 │   ├── evaluate\_AI\_qwen.py
+│   ├── evaluate\_CoDE.py
 │   └── load\_d3.py
 ├── outputs/             \# Default location for generated results, plots, tables
 │   ├── responses/       \# Raw model responses and rationales (JSONL)
@@ -182,14 +184,27 @@ python experiments/evaluate_AI_qwen.py \
     -m zeroshot-2-artifacts
 ```
 
+**Example: Evaluating CoDE model on the GenImage dataset (2k sample)**
+
+The CoDE model is not a Vision-Language Model and has a different evaluation mechanism.
+It does not use prompting modes (`-m`) or number of sequences (`-n`) in the same way.
+The `-llm` argument is not used by `evaluate_CoDE.py` but might be parsed by the shared argument parser (it will use a default or fixed value internally).
+
+```bash
+python experiments/evaluate_CoDE.py \
+    -c 0 \
+    -d genimage2k \
+    -b 50
+```
+
 **Common Arguments for Evaluation Scripts:**
 
   * `-llm` or `--llm`: Model identifier (e.g., `qwen25-7b`, `llama3-11b`). Refer to the `model_dict` (or `model_dict_qwen`) within the respective evaluation script for available models.
   * `-c` or `--cuda`: CUDA device ID(s) (e.g., `0`, or `0,1` for multiple GPUs, though multi-GPU support depends on the script's implementation).
   * `-d` or `--dataset`: Dataset identifier (e.g., `genimage`, `genimage2k`, `d3`, `d32k`, `df40`, `df402k`). These keys map to data loading routines and paths defined in `config.py` and `utils/helpers.py`.
   * `-b` or `--batch_size`: Batch size for model inference.
-  * `-n` or `--num`: Number of sequences to generate (e.g., for self-consistency).
-  * `-m` or `--mode`: Mode of reasoning or prompting strategy (e.g., `zeroshot`, `zeroshot-cot`, `zeroshot-2-artifacts`).
+  * `-n` or `--num`: Number of sequences to generate (e.g., for self-consistency). *(Note: Less relevant for `evaluate_CoDE.py`)*
+  * `-m` or `--mode`: Mode of reasoning or prompting strategy (e.g., `zeroshot`, `zeroshot-cot`, `zeroshot-2-artifacts`). *(Note: Less relevant for `evaluate_CoDE.py` which uses a default like "direct\_classification")*
 
 Refer to the `helpers.get_evaluation_args_parser()` function in `utils/helpers.py` and the `argparse` setup within each evaluation script for a complete list of options and their default values.
 
@@ -234,7 +249,7 @@ A log file (`load_d3_processing.log` by default, path configured by `config.LOAD
 
 ## Expected Outputs
 
-  * **Experiment Scripts (`experiments/evaluate_AI_*.py`)**:
+  * **Experiment Scripts (`experiments/evaluate_AI_*.py`, `experiments/evaluate_CoDE.py`)**:
       * Generate detailed rationale files (JSONL format) in the directory specified by `config.RESPONSES_DIR`.
       * Generate score files (JSON for confusion matrix, CSV for Macro F1) in the directory specified by `config.SCORES_DIR`.
   * **Result Scripts (`results/*.py`)**:

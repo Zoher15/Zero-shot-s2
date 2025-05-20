@@ -66,7 +66,7 @@ Zero-shot-s2/
 ├── utils/               \# Utility scripts and shared helper functions
 │   └── helpers.py       \# Core helper functions for data loading, evaluation, etc.
 ├── .gitignore           \# Specifies intentionally untracked files (e.g., large data files)
-├── LICENSE.md           \# Project license \<--- MODIFIED: Removed "(To be added)"
+├── LICENSE.md           \# Project license
 ├── README.md            \# This file
 └── requirements.txt     \# Python dependencies
 
@@ -145,8 +145,8 @@ Zero-shot-s2/
 ```
 
   * **D3 Dataset**:
-      * The D3 dataset requires an ID CSV file. By default, `config.py` is set up to use `data/d3/2k_sample_ids_d3.csv` (defined in `config.D3_CSV_FILE`). Ensure this file exists at this location or update `config.py` accordingly. The script `experiments/load_d3.py` will save downloaded images into the directory specified by `config.D3_DIR` (default: `data/d3/`). The CSV file must contain a column named 'id' (or you can specify a different column name using the `--id_column_name` argument when running the script).
-      * Use the `experiments/load_d3.py` script (see [Downloading and Preprocessing D3 Dataset Images](https://www.google.com/search?q=%23downloading-and-preprocessing-d3-dataset-images)) to download the actual images.
+      * The D3 dataset requires an ID CSV file. By default, `config.py` is set up to use `data/d3/2k_sample_ids_d3.csv` (defined in `config.D3_CSV_FILE`). Ensure this file exists at this location or update `config.py` accordingly. The script `experiments/load_d3.py` will save downloaded images into the directory specified by `config.D3_DIR` (default: `data/d3/`). The CSV file must contain a column named 'id'.
+      * Use the `experiments/load_d3.py` script
   * **Other Datasets (DF40, GenImage)**:
       * Place the respective CSV files in their designated directories as shown above (`data/df40/` and `data/genimage/`). The specific filenames for CSVs are defined in `config.py` (e.g., `config.GENIMAGE_2K_CSV_FILE`, `config.DF40_2K_CSV_FILE`). The image paths within these CSVs should be relative to a common base or be absolute paths that your system can access.
   * **Large Data Files**: Large data files and directories within `data/` (like image folders) should be added to your local `.gitignore` file if they are not already, to prevent accidental versioning. The provided `.gitignore` may already cover common patterns.

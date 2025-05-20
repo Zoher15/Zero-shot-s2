@@ -88,7 +88,7 @@ def get_first_responses(prompt_texts, messages_list, model_kwargs_dict):
         if messages_list and len(messages_list) == 1:
             current_messages_for_processing = messages_list * k
         else:
-            logger.warning("Mismatch or empty messages_list for single prompt in get_first_responses_qwen.")
+            logger.warning("Mismatch or empty messages_list for single prompt in get_first_responses.")
             current_messages_for_processing = [messages_list[0]] * k if messages_list else []
     else:
         prompts_to_encode = prompt_texts
@@ -202,8 +202,8 @@ def eval_AI(instructions_str, current_model_str, mode_type_str, test_data_list, 
             current_messages_list_batch = [p[1] for p in batch_group]
             current_examples_batch = [p[2] for p in batch_group]
 
-            first_responses_raw = get_first_responses_qwen(current_prompt_texts_batch, current_messages_list_batch, current_model_kwargs) # use current_model_kwargs
-            full_model_responses = get_second_responses_qwen(current_prompt_texts_batch, first_responses_raw, current_messages_list_batch, current_model_kwargs, answer_phrase) # use current_model_kwargs
+            first_responses_raw = get_first_responses(current_prompt_texts_batch, current_messages_list_batch, current_model_kwargs) # use current_model_kwargs
+            full_model_responses = get_second_responses(current_prompt_texts_batch, first_responses_raw, current_messages_list_batch, current_model_kwargs, answer_phrase) # use current_model_kwargs
 
             if actual_inference_batch_size == 1 and num_sequences_arg > 1:
                 example = current_examples_batch[0]

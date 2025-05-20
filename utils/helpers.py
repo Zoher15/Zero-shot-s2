@@ -351,14 +351,6 @@ def calculate_macro_f1_score_from_answers(pred_answers: List[str], ground_answer
         logger.error(f"Error calculating F1 score: {e}", exc_info=True)
         return None
 
-def calculate_f1_from_rationales(rationales_list: List[Dict[str, Any]], possible_labels: List[str] = None) -> Tuple[Union[float, None], int]:
-    if not rationales_list: return None, 0
-    pred_answers, ground_answers = _extract_answers_for_f1(rationales_list)
-    n_samples = len(ground_answers)
-    if n_samples == 0: return None, 0
-    f1 = calculate_macro_f1_score_from_answers(pred_answers, ground_answers, possible_labels)
-    return f1, n_samples
-
 def format_score_for_display(score: Union[float, int, None], zero_pad: bool = True, decimal_places: int = 1) -> str:
     # This function seems fine as is.
     if pd.isna(score) or score is None: return '-'

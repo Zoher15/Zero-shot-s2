@@ -33,7 +33,6 @@ TABLES_DIR = OUTPUTS_DIR / "tables"
 CACHE_DIR = PROJECT_ROOT / "cache" # General cache
 # F1_PLOT_CACHE_DIR = CACHE_DIR / "f1_cache_plot" # Removed as scaling_consistency.py will no longer use it
 CI_CACHE_DIR = CACHE_DIR / "ci_cache" # Specific for macro_f1_bars.py
-PROMPT_TABLE_CACHE_DIR = CACHE_DIR / "prompt_table_cache"
 PROCESSED_AGGREGATE_DATA_PKL = CACHE_DIR / "processed_model_aggregate_data_v2.pkl"
 PROCESSED_INDIVIDUAL_RESPONSES_PKL = CACHE_DIR / "response_cleaned_corpora_v2.pkl"
 # Add other cache dirs if needed by other scripts

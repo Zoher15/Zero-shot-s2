@@ -1,30 +1,10 @@
+import sys
+from pathlib import Path
+import logging
+import argparse # Keep argparse for specific CoDE arguments if not in helpers
 import os
-import argparse
-# Initialize the args parser
-parser = argparse.ArgumentParser(description="A simple argparse example")
-parser.add_argument("-c", "--cuda", type=str, help="CUDAs", default="6")
-parser.add_argument("-d", "--dataset", type=str, help="Dataset to use (e.g., 'faces' or 'genimage')", default="genimage")
-parser.add_argument("-b", "--batch_size", type=int, help="Batch size for the first response", default=50)
-
-args = parser.parse_args()
-cudas = args.cuda
-batch_size = args.batch_size
-# set the CUDA and then import torch
-os.environ["CUDA_VISIBLE_DEVICES"] = cudas
-
-import torch
-from transformers import set_seed
-set_seed(0)
-torch.manual_seed(0)
-torch.cuda.manual_seed(0)
-torch.backends.cudnn.deterministic = True
-torch.backends.cudnn.benchmark = False
-
 import json
-from tqdm import tqdm
-from collections import Counter
 import random
-import pandas as pd
 
 import torch
 import torch.nn as nn
@@ -33,267 +13,232 @@ from PIL import Image
 import joblib # For loading CoDE model classifiers
 import transformers
 from huggingface_hub import hf_hub_download
+from tqdm import tqdm
+import pandas as pd
 
+# Add project root to sys.path
+project_root = Path(__file__).resolve().parent.parent
+sys.path.append(str(project_root))
 
+import config
+from utils import helpers
+
+# --- Logger Setup ---
+logger = logging.getLogger(__name__)
+if not logger.hasHandlers():
+    logging.basicConfig(
+        level=logging.INFO,
+        format='%(asctime)s - %(levelname)s - %(name)s - %(message)s',
+        stream=sys.stdout
+    )
+
+# --- Argument Parsing ---
+# Using helpers.get_evaluation_args_parser() and adding CoDE specific args if any.
+# For CoDE, 'mode' and 'num_sequences' from the helper parser might not be directly applicable
+# or could be used with a default/fixed value. 'llm' is also not applicable.
+# We'll use the basic args from helpers and ignore ones that don't fit CoDE.
+parser = helpers.get_evaluation_args_parser()
+# Override or ignore LLM-specific arguments not relevant to CoDE
+parser.prog = "evaluate_CoDE.py" # Show correct script name in help
+# Remove arguments not applicable to CoDE or set defaults
+for action in parser._actions:
+    if action.dest == 'llm':
+        action.required = False # No LLM model name for CoDE
+        action.default = "CoDE" # Set a default if needed internally by helpers
+    if action.dest == 'mode':
+        action.default = "direct_classification" # CoDE doesn't have modes like zeroshot-cot
+    if action.dest == 'num': # num_sequences
+        action.default = 1 # Not applicable for CoDE
+
+args = parser.parse_args()
+
+# --- Environment Initialization ---
+helpers.initialize_environment(args.cuda) # Default seed 0 is handled by initialize_environment
+
+# --- Model Definition and Initialization ---
 class VITContrastiveHF(nn.Module):
     def __init__(self, repo_name, cache_dir=None):
         super(VITContrastiveHF, self).__init__()
-        # Load the pre-trained model from Hugging Face
         self.model = transformers.AutoModel.from_pretrained(repo_name, cache_dir=cache_dir)
-        # Replace the pooler with an identity layer as features are taken from last hidden state
         self.model.pooler = nn.Identity()
-
-        # Load the processor for the model (though a custom transform is used later)
         self.processor = transformers.AutoProcessor.from_pretrained(repo_name, cache_dir=cache_dir)
-        self.processor.do_resize = False # Disable automatic resizing by processor
-
-        # Define the correct classifier based on classificator_type
+        self.processor.do_resize = False
         file_path = hf_hub_download(repo_id=repo_name, filename='sklearn/linear_tot_classifier_epoch-32.sav', cache_dir=cache_dir)
         self.classifier = joblib.load(file_path)
 
     def forward(self, x, return_feature=False):
-        # Get features from the model
         features = self.model(x)
         if return_feature:
             return features
-        # Extract CLS token features [batch_size, seq_len, hidden_size] -> [batch_size, hidden_size]
         features = features.last_hidden_state[:, 0, :].cpu().detach().numpy()
-        # Get predictions from the classifier
         predictions = self.classifier.predict(features)
         return torch.from_numpy(predictions)
 
-model = VITContrastiveHF(repo_name='aimagelab/CoDE').eval().to('cuda')
+logger.info("Loading CoDE model...")
+model = VITContrastiveHF(repo_name='aimagelab/CoDE').eval().to('cuda' if torch.cuda.is_available() else 'cpu')
+logger.info("CoDE model loaded.")
 
-# Define image transformations for CoDE model
-# This matches the transform used in the CoDE snippet provided by the user
 transform = transforms.Compose([
     transforms.CenterCrop(224),
     transforms.ToTensor(),
     transforms.Normalize(mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225]),
 ])
-# --- End CoDE Model Initialization ---
 
-def load_genimage_data(file):
-    data = pd.read_csv(file)
-    examples = []
-    for _, row in data.iterrows():
-        example_data = {} # Renamed 'data' to avoid conflict
-        example_data['image'] = row['img_path']
-        example_data['answer'] = 'real' if row['dataset'] == 'real' else 'ai-generated'
-        examples.append(example_data)
-    return examples
-
-def load_d3_data(file_dir):
-    examples = []
-    for file in os.listdir(file_dir):
-        data = {
-            'image': os.path.join(file_dir, file),
-            'answer': 'real' if 'real' in file else 'ai-generated'
-        }
-        examples.append(data)
-    return examples
-
-def load_df40_data(file):
-    data = pd.read_csv(file)
-    examples = []
-    for _, row in data.iterrows():
-        example_data = {} # Renamed 'data' to avoid conflict
-        example_data['image'] = row['file_path']
-        example_data['answer'] = 'real' if row['label'] == 'real' else 'ai-generated'
-        examples.append(example_data)
-    return examples
-
-# Update the progress bar
-def update_progress(pbar, correct, macro_f1):
-    ntotal = pbar.n + 1
-    pbar.set_description(f"Macro-F1: {round(macro_f1, 2)} || Accuracy: {round(correct/ntotal, 2)} / {ntotal} ")
-    pbar.update()
-
-def get_macro_f1(score, cur_score, example):
-    """
-    Calculate the macro F1 score for AI image detection.
-    
-    Classes:
-    - 'real': Images that are not AI-generated (positive class)
-    - 'ai-generated': Images that are AI-generated (negative class)
-    
-    Confusion matrix:
-    - TP: Real images correctly classified as real
-    - FN: Real images incorrectly classified as AI-generated
-    - TN: AI-generated images correctly classified as AI-generated
-    - FP: AI-generated images incorrectly classified as real
-    
-    Parameters:
-    - score: Dictionary tracking confusion matrix values
-    - cur_score: Current prediction value (1=correct, 0=incorrect)
-    - example: Dictionary containing ground truth in 'answer' field
-    
-    Returns:
-    - macro_f1: Updated F1 score
-    """
-    # Update confusion matrix based on ground truth and prediction
-    if example['answer'] == 'real':
-        if cur_score == 1:
-            # Real image correctly predicted as real (TP)
-            score['TP'] += 1
-        elif cur_score == 0:
-            # Real image incorrectly predicted as AI-generated (FN)
-            score['FN'] += 1
-    elif example['answer'] == 'ai-generated':
-        if cur_score == 1:
-            # AI-generated image correctly predicted as AI-generated (TN)
-            score['TN'] += 1
-        elif cur_score == 0:
-            # AI-generated image incorrectly predicted as real (FP)
-            score['FP'] += 1
-
-    # Calculate F1 score for positive class (real)
-    if score['TP'] + score['FP'] > 0 and score['TP'] + score['FN'] > 0:
-        prec_pos = score['TP'] / (score['TP'] + score['FP'])
-        reca_pos = score['TP'] / (score['TP'] + score['FN'])
-        f1_pos = 2 * prec_pos * reca_pos / (prec_pos + reca_pos) if (prec_pos + reca_pos) > 0 else 0
-    else:
-        f1_pos = 0
-    
-    # Calculate F1 score for negative class (ai-generated)
-    if score['TN'] + score['FN'] > 0 and score['TN'] + score['FP'] > 0:
-        # For the negative class, we need to treat it as its own "positive" class
-        # Precision = correctly predicted AI / all predicted as AI
-        prec_neg = score['TN'] / (score['TN'] + score['FN'])
-        # Recall = correctly predicted AI / all actual AI
-        reca_neg = score['TN'] / (score['TN'] + score['FP'])
-        f1_neg = 2 * prec_neg * reca_neg / (prec_neg + reca_neg) if (prec_neg + reca_neg) > 0 else 0
-    else:
-        f1_neg = 0
-    
-    # Macro F1 is the average of both class F1 scores
-    macro_f1 = (f1_pos + f1_neg) / 2
-    
-    return macro_f1
-
-def get_CoDE_response(example_batch):
-    """
-    Get the response from the CoDE model.
-    
-    Parameters:
-    - example: Dictionary containing the image and question
-    
-    Returns:
-    - pred_answer: The predicted answer from the model
-    """
+# --- Model Response Generation ---
+def get_CoDE_response(example_batch, current_transform, current_model):
     batch_of_images_tensors = []
-    pred_answers = []
-    for example in example_batch:
+    processed_indices = [] # Keep track of which images were successfully processed
+    for idx, example in enumerate(example_batch):
         try:
             img = Image.open(example['image']).convert('RGB')
-            in_tens = transform(img) # transform should output a tensor
+            in_tens = current_transform(img)
             batch_of_images_tensors.append(in_tens)
+            processed_indices.append(idx)
         except Exception as e:
-            print(f"Error loading image {example['image']}: {e}")
-            continue
+            logger.warning(f"Error loading image {example.get('image', 'Unknown Image')}: {e}. Skipping this image.")
+            # We'll return fewer predictions than the input batch size if an image fails
     
-    input_batch_tensor = torch.stack(batch_of_images_tensors).to('cuda')
+    if not batch_of_images_tensors:
+        return [], [] # Return empty if no images were processed
+
+    input_batch_tensor = torch.stack(batch_of_images_tensors).to(current_model.model.device) # Use model's device
+    
+    pred_answers = []
     with torch.no_grad():
-        batch_predictions = model(input_batch_tensor).cpu().tolist()
+        batch_predictions = current_model(input_batch_tensor).cpu().tolist()
+    
     for pred in batch_predictions:
         if pred == 1:
             pred_answer = 'ai-generated'
-        elif pred == 0 or pred == -1:
+        elif pred == 0 or pred == -1: # CoDE paper mentions 0 for real, -1 for abstained (treat as real)
             pred_answer = 'real'
         else:
-            pred_answer = 'unknown'
+            logger.warning(f"Unknown prediction value from CoDE: {pred}. Defaulting to 'unknown'.")
+            pred_answer = 'unknown' # Should ideally not happen with the sklearn classifier
         pred_answers.append(pred_answer)
-    return pred_answers
-
-# Evaluate the model
-def eval_AI(model_str, test): 
-    # setting the model kwargs
-    global dataset
-    global batch_size
-
-    # Initialize the score and the rationales data
-    correct = 0
-    score = {'TP': 0, 'FP': 0, 'TN': 0, 'FN': 0}
-    rationales_data = []
-    # initialize the progress bar
-    pbar = tqdm(total=len(test), dynamic_ncols=True)
-    
-    
-    test_batches = [test[i:i + batch_size] for i in range(0, len(test), batch_size)]
         
-    for i, example_batch in enumerate(test_batches):
-        pred_answers = get_CoDE_response(example_batch)
-        
-        for pred_answer, example in zip(pred_answers, example_batch):            
-            cur_score = 1 if pred_answer == example['answer'] else 0
-            # update correct
-            correct += cur_score
-            
-            # update the score and get macro f1
-            macro_f1 = get_macro_f1(score, cur_score, example)
-            
-            # append the rationales data
-            rationales_data.append({"question": "", "prompt": "", "image": example['image'], "rationales": [], 'ground_answer': example['answer'], 'pred_answers': [pred_answer], 'pred_answer': pred_answer, 'cur_score': cur_score})
-            
-            # update the progress bar
-            update_progress(pbar, correct, macro_f1)
+    return pred_answers, processed_indices
+
+
+# --- Main Evaluation Logic ---
+def eval_AI(current_model_str, test_data_list, current_batch_size, dataset_name_str):
+    logger.info(f"Starting CoDE evaluation: Model={current_model_str}, Dataset={dataset_name_str}, BatchSize={current_batch_size}")
+
+    correct_count = 0
+    # Using the confusion matrix structure expected by helpers.get_macro_f1_from_counts
+    confusion_matrix_counts = {'TP': 0, 'FP': 0, 'TN': 0, 'FN': 0}
+    rationales_data_output_list = []
+
+    # Create batches
+    test_batches = [test_data_list[i:i + current_batch_size] for i in range(0, len(test_data_list), current_batch_size)]
     
-    # dump the rationales data
-    rationales_file = f"/data3/zkachwal/visual-reasoning/data/ai-generation/responses/AI_dev-{dataset}-{model_str}-rationales.jsonl"
-    with open(rationales_file, 'w') as file:
-        json.dump(rationales_data, file, indent=4)
-    print(f"Rationales data saved to {rationales_file}")
+    total_examples_processed_successfully = 0
 
-    # dump the scores data
-    scores_file = f"/data3/zkachwal/visual-reasoning/data/ai-generation/scores/AI_dev-{dataset}-{model_str}-scores.json"
-    with open(scores_file, 'w') as file:
-        json.dump(score, file, indent=4)
-    print(f"Scores data saved to {scores_file}")
-    return macro_f1
+    with tqdm(total=len(test_data_list), dynamic_ncols=True) as pbar:
+        for example_batch in test_batches:
+            pred_answers, processed_indices = get_CoDE_response(example_batch, transform, model)
+            
+            successfully_processed_examples_in_batch = [example_batch[i] for i in processed_indices]
 
-# Load the dataset
-# instructions = 
-instructions = None
-dataset = args.dataset
+            for pred_idx, pred_answer in enumerate(pred_answers):
+                example = successfully_processed_examples_in_batch[pred_idx]
+                
+                # CoDE does not use a "question", so we use a placeholder or omit.
+                # Rationales are also not generated by CoDE.
+                # The 'prompt' field is also not applicable.
+                
+                is_correct = 1 if pred_answer == example['answer'] else 0
+                correct_count += is_correct
+                total_examples_processed_successfully +=1
 
-if 'genimage' in dataset:
-    if '2k' in dataset:
-        images_test = load_genimage_data('/data3/singhdan/genimage/2k_random_sample.csv')
-    else:
-        images_test = load_genimage_data('/data3/singhdan/genimage/10k_random_sample.csv')
-elif 'd3' in dataset:
-    images_test = load_d3_data('/data3/zkachwal/ELSA_D3/')
-    images_test_str = [str(i) for i in images_test]
-    train_n = int(len(images_test)*0.8)
-    random.seed(0)
-    train_images = random.sample(images_test_str, train_n)
-    dev_images = list(set(images_test_str) - set(train_images))
-    if '2k' in dataset:
-        images_test = [eval(i) for i in dev_images]
-    else:
-        images_test = [eval(i) for i in train_images]
-elif 'df40' in dataset:
-    if '2k' in dataset:
-        images_test = load_df40_data('/data3/singhdan/DF40/2k_sample_df40.csv')
-    else:
-        images_test = load_df40_data('/data3/singhdan/DF40/10k_sample_df40.csv')
+                # Update confusion matrix based on ground truth and prediction
+                # Assuming 'real' is the positive class (TP, FN) and 'ai-generated' is the negative class (TN, FP)
+                if example['answer'] == 'real':
+                    if is_correct == 1: # Predicted 'real', Ground 'real'
+                        confusion_matrix_counts['TP'] += 1
+                    else: # Predicted 'ai-generated', Ground 'real'
+                        confusion_matrix_counts['FN'] += 1
+                elif example['answer'] == 'ai-generated':
+                    if is_correct == 1: # Predicted 'ai-generated', Ground 'ai-generated'
+                        confusion_matrix_counts['TN'] += 1
+                    else: # Predicted 'real', Ground 'ai-generated'
+                        confusion_matrix_counts['FP'] += 1
+                
+                current_macro_f1 = helpers.get_macro_f1_from_counts(confusion_matrix_counts)
+                
+                rationales_data_output_list.append({
+                    "question": example.get('question', ""), # Include if present from helper, else empty
+                    "prompt": "", # No prompt for CoDE
+                    "image": example['image'],
+                    "rationales": [], # No rationales for CoDE
+                    'ground_answer': example['answer'],
+                    'pred_answers': [pred_answer], # List of predictions (single for CoDE)
+                    'pred_answer': pred_answer,    # Final chosen prediction
+                    'cur_score': is_correct
+                })
+                # Update progress bar based on total successfully processed examples so far
+                if total_examples_processed_successfully > 0:
+                     accuracy_val = correct_count / total_examples_processed_successfully
+                else:
+                    accuracy_val = 0
+                
+                # Custom progress update for CoDE as helpers.update_progress expects F1 in percentage
+                pbar.set_description(f"Macro-F1: {current_macro_f1*100:.2f}% || Accuracy: {accuracy_val*100:.2f}% ({correct_count}/{total_examples_processed_successfully})")
+                pbar.update(1) # Update by one for each successfully processed item
+            
+            # If some images in the batch failed to load, pbar might not have updated for them.
+            # We update pbar by the number of successfully processed items.
+            # If some items were skipped, pbar.n might be less than expected for the whole batch.
+            # This is handled by updating pbar by 1 inside the loop above.
+            # If an entire batch fails (all images), pbar won't update in this iteration.
 
-# shuffling
-random.seed(0)
-random.shuffle(images_test)
+    if total_examples_processed_successfully == 0:
+        logger.error("No examples were processed successfully. Cannot calculate final metrics.")
+        return 0.0
 
-# Initialize a dictionary to store the scores
-scores_dict = {}
+    final_macro_f1 = helpers.get_macro_f1_from_counts(confusion_matrix_counts)
+    
+    # Save outputs using helper function
+    # For CoDE, mode_type_str and num_sequences_val are fixed or not applicable.
+    # model_prefix can be "AI_CoDE" to distinguish from VLM experiments.
+    helpers.save_evaluation_outputs(
+        rationales_data=rationales_data_output_list,
+        score_metrics=confusion_matrix_counts,
+        macro_f1_score=final_macro_f1, # save_evaluation_outputs expects F1 as 0-1 range
+        model_prefix="AI_CoDE",
+        dataset_name=dataset_name_str,
+        model_string=current_model_str, # "CoDE"
+        mode_type_str=args.mode, # "direct_classification" or similar from parser default
+        num_sequences_val=args.num, # 1 from parser default
+        config_module=config # Pass the imported config module
+    )
+    return final_macro_f1
 
-# Evaluate the model
-model_str = "CoDE"
+# --- Main Execution Block ---
+if __name__ == "__main__":
+    model_str_arg = "CoDE" # Fixed for this script
 
-scores_dict[""] = eval_AI(model_str, images_test)
+    # Load test data using helpers.load_test_data
+    # CoDE doesn't use a question phrase, so pass an empty string.
+    # config module needs to be passed to helpers.load_test_data
+    logger.info(f"Loading dataset: {args.dataset} using helpers...")
+    # The question_phrase is not used by CoDE, so an empty string or config.EVAL_QUESTION_PHRASE can be passed.
+    # The helpers.load_test_data will add a 'question' field to each example.
+    images_test_data = helpers.load_test_data(args.dataset, config, question_phrase=config.EVAL_QUESTION_PHRASE)
 
-# Convert the scores dictionary to a pandas DataFrame
-scores_df = pd.DataFrame.from_dict(scores_dict, orient='index')
+    if not images_test_data:
+        logger.error(f"Failed to load test data for dataset: {args.dataset}. Exiting.")
+        sys.exit(1)
+    
+    logger.info(f"Loaded {len(images_test_data)} examples for dataset '{args.dataset}'.")
 
-# Write the DataFrame to a CSV file
-csv_file = f'/data3/zkachwal/visual-reasoning/data/ai-generation/scores/AI_dev-{dataset}-{model_str}-scores.csv'
-scores_df.to_csv(csv_file, index=True)
-print(f"Scores CSV saved to {csv_file}")
+    # Call evaluation function
+    final_f1_score = eval_AI(
+        current_model_str=model_str_arg,
+        test_data_list=images_test_data,
+        current_batch_size=args.batch_size,
+        dataset_name_str=args.dataset
+    )
+
+    logger.info(f"Evaluation finished for CoDE model on dataset: {args.dataset}")
+    logger.info(f"Final Macro F1: {final_f1_score*100:.2f}%")

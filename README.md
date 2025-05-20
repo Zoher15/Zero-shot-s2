@@ -10,8 +10,6 @@ Specifically, we introduce zero-shot-s² (zero-shot style and synthesis), a meth
 
 Our findings highlight that task-aligned prompts can effectively elicit and enhance latent capabilities in VLMs for tasks like AI-generated image detection, offering a simple, generalizable, and explainable alternative to supervised methods.
 
-
-
 ## Table of Contents
 
 - [Repository Structure](#repository-structure)
@@ -44,8 +42,8 @@ Our findings highlight that task-aligned prompts can effectively elicit and enha
 Zero-shot-s2/
 ├── config.py            \# Central configuration for paths and global parameters
 ├── data/                \# Placeholder for input datasets (managed via .gitignore)
-│   ├── D3/              \# D3 dataset images and metadata CSV
-│   ├── DF40/            \# DF40 dataset CSVs
+│   ├── d3/              \# D3 dataset images and metadata CSV
+│   ├── df40/            \# DF40 dataset CSVs
 │   └── genimage/        \# GenImage dataset CSVs
 ├── experiments/         \# Scripts for running evaluations and data processing
 │   ├── evaluate\_AI\_llama.py
@@ -135,10 +133,10 @@ The expected structure within `data/` is:
 ```
 Zero-shot-s2/
 └── data/
-    ├── D3/
-    │   └── D3_2k_sample.csv     # CSV for D3 image URLs (actual images downloaded by load_d3.py)
+    ├── d3/
+    │   └── 2k_sample_ids_d3.csv # CSV for D3 image IDs (actual images downloaded by load_d3.py)
     │   └── (images will be saved here by load_d3.py)
-    ├── DF40/
+    ├── df40/
     │   ├── 10k_sample_df40.csv
     │   └── 2k_sample_df40.csv
     └── genimage/
@@ -147,10 +145,10 @@ Zero-shot-s2/
 ```
 
   * **D3 Dataset**:
-      * Place the CSV file (e.g., `D3_2k_sample.csv` as specified in `config.D3_CSV_FILE`) in the `data/D3/` directory.
+      * The D3 dataset requires an ID CSV file. By default, `config.py` is set up to use `data/d3/2k_sample_ids_d3.csv` (defined in `config.D3_CSV_FILE`). Ensure this file exists at this location or update `config.py` accordingly. The script will save downloaded images into the directory specified by `config.D3_DIR` (default: `data/d3/`). The CSV file must contain a column named 'id' (or you can specify a different column name using the `--id_column_name` argument when running the script).
       * Use the `experiments/load_d3.py` script (see [Downloading and Preprocessing D3 Dataset Images](https://www.google.com/search?q=%23downloading-and-preprocessing-d3-dataset-images)) to download the actual images.
   * **Other Datasets (DF40, GenImage)**:
-      * Place the respective CSV files in their designated directories as shown above. The specific filenames for CSVs are defined in `config.py` (e.g., `config.GENIMAGE_2K_CSV_FILE`). The image paths within these CSVs should be relative to a common base or be absolute paths that your system can access.
+      * Place the respective CSV files in their designated directories as shown above (`data/df40/` and `data/genimage/`). The specific filenames for CSVs are defined in `config.py` (e.g., `config.GENIMAGE_2K_CSV_FILE`, `config.DF40_2K_CSV_FILE`). The image paths within these CSVs should be relative to a common base or be absolute paths that your system can access.
   * **Large Data Files**: Large data files and directories within `data/` (like image folders) should be added to your local `.gitignore` file if they are not already, to prevent accidental versioning. The provided `.gitignore` may already cover common patterns.
 
 *(Consider adding specific download links or detailed instructions for acquiring each dataset if publicly available and permissible.)*
@@ -214,20 +212,25 @@ This will generate a plot like `self_consistency_scaling.png` in the `outputs/pl
 
 ### Downloading and Preprocessing D3 Dataset Images
 
-The `experiments/load_d3.py` script is used to download and save images for the D3 dataset based on a CSV file containing image URLs.
+The `experiments/load_d3.py` script is used to download and save images for the D3 dataset based on a CSV file containing image IDs.
+
+```bash
+python experiments/load_d3.py
+```
+
+The script uses default paths for the CSV file (`config.D3_CSV_FILE`) and save directory (`config.D3_DIR`) as defined in `config.py`. If your files are located elsewhere, or if you are using a different CSV file, you can specify them using command-line arguments:
 
 ```bash
 python experiments/load_d3.py \
-    --csv_filepath data/D3/D3_2k_sample.csv \
-    --save_directory data/D3 \
+    --ids_csv_filepath path/to/your/d3_ids.csv \
+    --id_column_name your_id_column \
+    --save_directory path/to/your/d3_images_save_location \
     --timeout 15 \
-    --force  # Optional: to overwrite existing images
-    --verbose # Optional: for debug logging
+    --force    # Optional: to overwrite existing images
+    --verbose  # Optional: for debug logging
 ```
 
-  * Update `--csv_filepath` if your D3 metadata CSV is named or located differently (default uses `config.D3_CSV_FILE`).
-  * Update `--save_directory` to specify where images should be saved (default uses `config.D3_DIR`). The script will create the save directory if it doesn't exist.
-  * A log file (`load_d3_processing.log` by default, path configured by `config.LOAD_D3_LOG_FILE`) will be created in the project root.
+A log file (`load_d3_processing.log` by default, path configured by `config.LOAD_D3_LOG_FILE`) will be created in the project root.
 
 ## Expected Outputs
 
@@ -239,13 +242,13 @@ python experiments/load_d3.py \
       * Generate `.tex` LaTeX table files in `config.TABLES_DIR`.
       * Some scripts might print tables or summaries to the console.
   * **Data Loading Scripts (`experiments/load_d3.py`)**:
-      * Download images to the specified save directory (e.g., `data/D3/`).
+      * Download images to the specified save directory (e.g., `data/d3/`).
       * Produce a log file detailing the download process.
 
 ## Troubleshooting
 
   * **`FileNotFoundError`**:
-      * Ensure that all required dataset files (CSVs, image directories) are correctly placed as per the "Data Preparation" section and that paths in `config.py` point to them correctly.
+      * Ensure that all required dataset files (CSVs, image directories) are correctly placed as per the "Data Preparation" section and that paths in `config.py` point to them correctly. Pay attention to directory and file casing, especially on case-sensitive systems like Linux.
       * Verify that output directories specified in `config.py` are writable.
   * **`ModuleNotFoundError`**:
       * Make sure your virtual environment is activated.
@@ -292,7 +295,3 @@ We welcome contributions\! If you'd like to contribute, please follow these guid
 ## Acknowledgements
 
 *(Optional: Acknowledge any libraries, datasets, or individuals that significantly helped your project.)*
-
-## Changelog
-
-*(Consider maintaining a `CHANGELOG.md` file to document notable changes, new features, and bug fixes across different versions of the repository.)*

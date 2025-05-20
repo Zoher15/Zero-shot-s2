@@ -146,8 +146,8 @@ def save_evaluation_outputs(
     except IOError as e:
         logger.error(f"Could not save Macro F1 CSV to {csv_file_path}: {e}", exc_info=True)
 
-def append_prompt_suffix_for_mode(prompt_text: str, mode_type: str) -> str:
-    suffixes = {
+def get_model_guiding_prefix_for_mode(prompt_text: str, mode_type: str) -> str:
+    prefixes = {
         "zeroshot-cot": "Let's think step by step",
         "zeroshot-visualize": "Let's visualize",
         "zeroshot-examine": "Let's examine",
@@ -166,13 +166,13 @@ def append_prompt_suffix_for_mode(prompt_text: str, mode_type: str) -> str:
         "zeroshot-8-artifacts": "Let's analyze the style and the synthesis artifacts",
         "zeroshot-9-artifacts": "Let's examine the details and the textures",
     }
-    suffix_to_add = ""
-    for key_suffix, text_suffix in suffixes.items():
-        if key_suffix in mode_type:
-            suffix_to_add = text_suffix
+    prefix_to_add = ""
+    for key_prefix, text_prefix in prefixes.items():
+        if key_prefix in mode_type:
+            prefix_to_add = text_prefix
             break
-    if suffix_to_add: # Ensure space only if suffix is added
-        return f"{prompt_text.rstrip()} {suffix_to_add}" # rstrip to avoid double spaces if prompt_text ends with one
+    if prefix_to_add: # Ensure space only if prefix is added
+        return f"{prompt_text.rstrip()} {prefix_to_add}" # rstrip to avoid double spaces if prompt_text ends with one
     return prompt_text
 
 

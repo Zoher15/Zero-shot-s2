@@ -121,31 +121,23 @@ def get_second_responses(prompt_texts, first_responses, messages_list, model_kwa
     second_pass_prompts = []
     second_pass_messages = []
 
-    mode_suffix = helpers.append_prompt_suffix_for_mode('', args.mode) # Get the suffix itself
-
-    if len(prompt_texts) == 1:
-        original_single_prompt_full = prompt_texts[0]
-        base_prompt_part = original_single_prompt_full
-        if mode_suffix.strip():
-            if original_single_prompt_full.endswith(mode_suffix):
-                base_prompt_part = original_single_prompt_full[:-len(mode_suffix)].strip()
-
+    if len(prompt_texts) == 1: # This case is typically when num_return_sequences > 1 for a single example
+        original_single_prompt_full = prompt_texts[0] # This is the P1_qwen which includes the mode suffix
+        # REMOVED: Logic to calculate base_prompt_part by stripping suffix
         original_single_message_dict = messages_list[0]
+        
         for first_cut in first_cut_responses:
-            second_pass_prompts.append(f"{base_prompt_part} {first_cut} {current_answer_phrase}".strip())
-            second_pass_messages.append(original_single_message_dict)
-    else:
-        for i_loop in range(len(first_responses)): # Renamed loop variable
-            original_prompt_full_i = prompt_texts[i_loop]
-            base_prompt_part_i = original_prompt_full_i
-            if mode_suffix.strip():
-                if original_prompt_full_i.endswith(mode_suffix):
-                    base_prompt_part_i = original_prompt_full_i[:-len(mode_suffix)].strip()
-
-            second_pass_prompts.append(f"{base_prompt_part_i} {first_cut_responses[i_loop]} {current_answer_phrase}".strip())
+            # MODIFIED: Use original_single_prompt_full directly
+            second_pass_prompts.append(f"{original_single_prompt_full} {first_cut} {current_answer_phrase}".strip())
+            second_pass_messages.append(original_single_message_dict) # Image context is still from original messages
+    
+    else: # This case is typically when num_return_sequences == 1 for a batch of examples
+        for i_loop in range(len(first_responses)):
+            original_prompt_full_i = prompt_texts[i_loop] # This is P1_qwen for the i-th item
+            second_pass_prompts.append(f"{original_prompt_full_i} {first_cut_responses[i_loop]} {current_answer_phrase}".strip())
             second_pass_messages.append(messages_list[i_loop])
 
-    image_inputs, video_inputs = process_vision_info(second_pass_messages)
+    image_inputs, video_inputs = process_vision_info(second_pass_messages) # process_vision_info still needed for Qwen
 
     inputs = processor(text=second_pass_prompts, images=image_inputs, videos=video_inputs, padding=True, return_tensors="pt").to(model.device)
     input_length = inputs.input_ids.shape[1]
@@ -188,7 +180,7 @@ def eval_AI(instructions_str, current_model_str, mode_type_str, test_data_list, 
         current_item_messages.append({"role": "user", "content": user_content_list})
 
         prompt_text_from_template = processor.apply_chat_template(current_item_messages, padding=False, tokenize=False, truncation=True, add_generation_prompt=True)
-        final_prompt_text = helpers.append_prompt_suffix_for_mode(prompt_text_from_template, mode_type_str)
+        final_prompt_text = helpers.get_model_guiding_prefix_for_mode(prompt_text_from_template, mode_type_str)
         prompt_orig_messages_examples_list.append((final_prompt_text, current_item_messages, example_item))
 
     logger.info(f"Running Qwen evaluation: Dataset={args.dataset}, Mode={mode_type_str}, Model={current_model_str}, NumSequences={num_sequences_arg}, BatchSize={current_batch_size}")

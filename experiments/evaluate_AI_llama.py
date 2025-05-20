@@ -158,7 +158,7 @@ def eval_AI(instructions_str, current_model_str, mode_type_str, test_data_list, 
         messages.append({"role": "user", "content": [{"type": "image"}, {"type": "text", "text": example_item['question']}]})
         
         prompt_text = processor.apply_chat_template(messages, tokenize=False, add_generation_prompt=True)
-        prompt_text = helpers.append_prompt_suffix_for_mode(prompt_text, mode_type_str)
+        prompt_text = helpers.get_model_guiding_prefix_for_mode(prompt_text, mode_type_str)
         prompt_messages_examples_list.append((prompt_text, example_item))
 
     logger.info(f"Running Llama evaluation: Dataset={args.dataset}, Mode={mode_type_str}, Model={current_model_str}, NumSequences={num_sequences_arg}, BatchSize={current_batch_size}")

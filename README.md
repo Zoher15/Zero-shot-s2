@@ -66,7 +66,7 @@ Zero-shot-s2/
 ├── utils/               \# Utility scripts and shared helper functions
 │   └── helpers.py       \# Core helper functions for data loading, evaluation, etc.
 ├── .gitignore           \# Specifies intentionally untracked files (e.g., large data files)
-├── LICENSE.md           \# Project license (To be added)
+├── LICENSE.md           \# Project license \<--- MODIFIED: Removed "(To be added)"
 ├── README.md            \# This file
 └── requirements.txt     \# Python dependencies
 
@@ -84,7 +84,7 @@ Zero-shot-s2/
 ### 1. Clone the Repository
 
 ```bash
-git clone [https://github.com/Zoher15/Zero-shot-s2.git](https://github.com/Zoher15/Zero-shot-s2.git)
+git clone [https://github.com/Zoher15/Zero-shot-s2.git](https://github.com/Zoher15/Zero-shot-s2.git) # Assuming this is the correct URL
 cd Zero-shot-s2
 ````
 
@@ -145,7 +145,7 @@ Zero-shot-s2/
 ```
 
   * **D3 Dataset**:
-      * The D3 dataset requires an ID CSV file. By default, `config.py` is set up to use `data/d3/2k_sample_ids_d3.csv` (defined in `config.D3_CSV_FILE`). Ensure this file exists at this location or update `config.py` accordingly. The script will save downloaded images into the directory specified by `config.D3_DIR` (default: `data/d3/`). The CSV file must contain a column named 'id' (or you can specify a different column name using the `--id_column_name` argument when running the script).
+      * The D3 dataset requires an ID CSV file. By default, `config.py` is set up to use `data/d3/2k_sample_ids_d3.csv` (defined in `config.D3_CSV_FILE`). Ensure this file exists at this location or update `config.py` accordingly. The script `experiments/load_d3.py` will save downloaded images into the directory specified by `config.D3_DIR` (default: `data/d3/`). The CSV file must contain a column named 'id' (or you can specify a different column name using the `--id_column_name` argument when running the script).
       * Use the `experiments/load_d3.py` script (see [Downloading and Preprocessing D3 Dataset Images](https://www.google.com/search?q=%23downloading-and-preprocessing-d3-dataset-images)) to download the actual images.
   * **Other Datasets (DF40, GenImage)**:
       * Place the respective CSV files in their designated directories as shown above (`data/df40/` and `data/genimage/`). The specific filenames for CSVs are defined in `config.py` (e.g., `config.GENIMAGE_2K_CSV_FILE`, `config.DF40_2K_CSV_FILE`). The image paths within these CSVs should be relative to a common base or be absolute paths that your system can access.
@@ -184,7 +184,7 @@ python experiments/evaluate_AI_qwen.py \
 
 **Common Arguments for Evaluation Scripts:**
 
-  * `-llm` or `--llm`: Model identifier (e.g., `qwen25-7b`, `llama3-11b`). Refer to the `model_dict` within the respective evaluation script for available models.
+  * `-llm` or `--llm`: Model identifier (e.g., `qwen25-7b`, `llama3-11b`). Refer to the `model_dict` (or `model_dict_qwen`) within the respective evaluation script for available models.
   * `-c` or `--cuda`: CUDA device ID(s) (e.g., `0`, or `0,1` for multiple GPUs, though multi-GPU support depends on the script's implementation).
   * `-d` or `--dataset`: Dataset identifier (e.g., `genimage`, `genimage2k`, `d3`, `d32k`, `df40`, `df402k`). These keys map to data loading routines and paths defined in `config.py` and `utils/helpers.py`.
   * `-b` or `--batch_size`: Batch size for model inference.
@@ -278,18 +278,3 @@ If you use this code or these findings in your research, please cite:
   howpublished = {Submitted to NeurIPS 2025.}
 }
 ```
-
-*(Please replace with your actual BibTeX entry when available.)*
-
-## Contributing
-
-We welcome contributions\! If you'd like to contribute, please follow these guidelines:
-
-  * For major changes, please open an issue first to discuss what you would like to change.
-  * Ensure your code adheres to the project's coding style (consider using a linter/formatter like Black).
-  * Make sure to update documentation and tests as appropriate.
-  * Create a pull request with a clear description of your changes.
-
-## Acknowledgements
-
-*(Optional: Acknowledge any libraries, datasets, or individuals that significantly helped your project.)*

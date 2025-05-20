@@ -164,7 +164,6 @@ Zero-shot-s2/
 
       * **Image Files**: The D3 dataset images are downloaded using a script.
           * The script `experiments/load_d3.py` will download and save images based on an ID CSV file.
-          * See the [Downloading and Preprocessing D3 Dataset Images](https://www.google.com/search?q=%23downloading-and-preprocessing-d3-dataset-images) section for usage. Images will be saved into the directory specified by `config.D3_DIR` (default: `data/d3/`).
       * **CSV File**: By default, `config.py` is set up to use `data/d3/2k_sample_ids_d3.csv` (defined in `config.D3_CSV_FILE`). Ensure this file exists at this location or update `config.py`. The CSV file must contain a column named 'id'.
 
   * **DF40 Dataset**: ([Original source](https://github.com/YZY-stack/DF40))

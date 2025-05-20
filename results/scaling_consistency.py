@@ -1,5 +1,5 @@
 import os
-import json
+import json # Keep json for other potential uses, though not for cache here
 import pandas as pd
 import numpy as np
 import matplotlib.pyplot as plt
@@ -14,13 +14,11 @@ from utils import helpers # Import the helpers module
 
 # --- Configuration ---
 # Use paths from config.py
-SCORES_DIR = config.SCORES_DIR # Changed from RESPONSES_DIR to SCORES_DIR
-F1_PLOT_CACHE_DIR = config.F1_PLOT_CACHE_DIR
-TARGET_LLAMA_MODEL_NAME = "llama3-11b" # Make sure this matches filenames
+SCORES_DIR = config.SCORES_DIR
+# F1_PLOT_CACHE_DIR = config.F1_PLOT_CACHE_DIR # No longer using this cache
+TARGET_LLAMA_MODEL_NAME = "llama3-11b" 
 
 N_VALUES = [1, 5, 10, 20]
-# WAIT_VAL_PLOT is no longer needed for filename construction if scores.csv doesn't include it
-# WAIT_VAL_PLOT = "0"
 
 DATASETS_TO_PLOT = {
     "d32k": "D3 (2k)",
@@ -39,7 +37,7 @@ COLORBLIND_FRIENDLY_PALETTE = {
     'zeroshot-2-artifacts': "#7F4CA5"
 }
 
-# Font Sizes and Plotting Parameters (can be moved to a plotting_config if desired)
+# Font Sizes and Plotting Parameters
 TITLE_FONTSIZE = 19
 AXIS_LABEL_FONTSIZE = 18
 TICK_LABEL_FONTSIZE = 16
@@ -50,56 +48,27 @@ PLOT_LINE_LINEWIDTH = 2.5
 PLOT_MARKER_SIZE = 8
 SELECTED_FIG_SIZE = (16, 5)
 
-# --- Data Loading for a Single Point (with Caching) ---
+# --- Data Loading for a Single Point (No Caching) ---
 def get_f1_score(model_name, dataset_name, method_key, n_val):
     """
-    Loads F1 score from a scores.csv file for a specific set of parameters.
-    Handles caching to avoid redundant disk reads.
+    Loads F1 score directly from a scores.csv file for a specific set of parameters.
     """
-    F1_PLOT_CACHE_DIR.mkdir(parents=True, exist_ok=True) # Ensure cache dir exists
-    # Cache filename remains the same as it uniquely identifies the data point
-    cache_fname_part = f"F1_{model_name}_{dataset_name}_{method_key}_n{str(n_val)}.json" # Removed wait_val from cache key
-    fpath_cache = F1_PLOT_CACHE_DIR / cache_fname_part
-
-    if fpath_cache.exists():
-        try:
-            with open(fpath_cache, 'r') as cf:
-                cached_data = json.load(cf)
-            score_val = cached_data.get('score')
-            if score_val is not None:
-                print(f"  CACHE HIT: {model_name}/{dataset_name}/{method_key}/n={n_val}. Score: {score_val}")
-                return score_val
-        except Exception as e:
-            print(f"  CACHE ERROR reading {fpath_cache}: {e}. Recalculating.", file=sys.stderr)
-
     # Construct filename for scores.csv based on helpers.save_evaluation_outputs
-    # Filename format: f"{model_prefix}-{dataset_name}-{model_string}-{mode_type_str}-n{num_sequences_val}-scores.csv"
-    prefix = "AI_llama" if "llama" in model_name.lower() else "AI_qwen" # Assuming model_name is like TARGET_LLAMA_MODEL_NAME
-
-    # model_string in save_evaluation_outputs is the full model name (e.g., "llama3-11b")
-    # method_key here is mode_type_str in save_evaluation_outputs
-    # n_val here is num_sequences_val in save_evaluation_outputs
+    prefix = "AI_llama" if "llama" in model_name.lower() else "AI_qwen"
     fname_csv = f"{prefix}-{dataset_name}-{model_name}-{method_key}-n{str(n_val)}-scores.csv"
     fpath_csv = SCORES_DIR / fname_csv
     
     score_val = None
-    # n_samples is not directly available in scores.csv, set to placeholder or remove from cache
-    n_samples_placeholder = 0 
 
     if fpath_csv.exists():
-        df_score = helpers.load_scores_csv_to_dataframe(fpath_csv) # Use helper to load CSV
+        df_score = helpers.load_scores_csv_to_dataframe(fpath_csv)
         if not df_score.empty:
             try:
-                # Index in CSV is like 'method_key-n<n_val>'
-                # Column name is 'macro_f1'
                 target_index = f"{method_key}-n{str(n_val)}"
                 if target_index in df_score.index:
                     raw_f1_score = df_score.loc[target_index, 'macro_f1']
                     score_val = round(float(raw_f1_score) * 100, 1) # Convert 0-1 to 0-100 scale, round
                     print(f"  CSV READ: {model_name}/{dataset_name}/{method_key}/n={n_val}. Score: {score_val}")
-                    with open(fpath_cache, 'w') as cf:
-                        # n_samples is not in the CSV, so we cache a placeholder or omit it
-                        json.dump({'score': score_val, 'n_samples_original_source': 'scores.csv'}, cf)
                 else:
                     print(f"    WARN: Index '{target_index}' not found in {fpath_csv}. Available indices: {df_score.index.tolist()}", file=sys.stderr)
             except KeyError:
@@ -107,10 +76,8 @@ def get_f1_score(model_name, dataset_name, method_key, n_val):
             except Exception as e:
                 print(f"    ERROR processing {fpath_csv}: {e}", file=sys.stderr)
         else:
-            # load_scores_csv_to_dataframe already logs if file not found but empty df means issue.
-            if fpath_csv.exists(): # If it exists but helper returned empty
+            if fpath_csv.exists():
                  print(f"    WARN: scores.csv file {fpath_csv} exists but was empty or unreadable by helper.", file=sys.stderr)
-            # else: File not found, already logged by helper.
     else:
         print(f"    INFO: scores.csv file NOT FOUND: {fpath_csv}")
         
@@ -118,17 +85,16 @@ def get_f1_score(model_name, dataset_name, method_key, n_val):
 
 # --- Main Script Logic ---
 def main():
-    if not SCORES_DIR.is_dir(): # Check SCORES_DIR
+    if not SCORES_DIR.is_dir(): 
         print(f"ERROR: SCORES_DIR '{SCORES_DIR}' not found. Please check the path in config.py.", file=sys.stderr)
         sys.exit(1)
 
     plot_data = []
-    print(f"\n--- Collecting F1 Scores for {TARGET_LLAMA_MODEL_NAME} (from scores.csv) ---")
-    for n_val_loop in N_VALUES: # Renamed n_val to n_val_loop to avoid conflict
+    print(f"\n--- Collecting F1 Scores for {TARGET_LLAMA_MODEL_NAME} (from scores.csv, no caching) ---")
+    for n_val_loop in N_VALUES:
         for dataset_id, dataset_display_name in DATASETS_TO_PLOT.items():
-            for method_key_loop in METHODS_TO_PLOT: # Renamed method_key
+            for method_key_loop in METHODS_TO_PLOT:
                 print(f"Processing: n={n_val_loop}, Dataset='{dataset_display_name}', Method='{method_key_loop}'")
-                # Pass n_val_loop to get_f1_score
                 f1 = get_f1_score(TARGET_LLAMA_MODEL_NAME, dataset_id, method_key_loop, n_val_loop)
                 plot_data.append({
                     'n_value': n_val_loop,
@@ -145,14 +111,14 @@ def main():
         print("Please ensure that evaluation scripts have been run for all N_VALUES and that scores.csv files exist in the configured SCORES_DIR.")
         sys.exit(1)
 
-    # --- Plotting --- (The plotting logic itself remains largely unchanged)
+    # --- Plotting --- (Plotting logic remains the same)
     print("\n--- Generating Plot ---")
     num_datasets = len(DATASETS_TO_PLOT)
     fig, axes = plt.subplots(1, num_datasets, figsize=SELECTED_FIG_SIZE, squeeze=False)
 
     handles_dict = {}
     labels_for_legend_dict = {}
-    x_axis_title = "Sampled Responses (n)" # Updated x-axis title
+    x_axis_title = "Sampled Responses (n)" 
 
     for i, (dataset_id, dataset_display_name) in enumerate(DATASETS_TO_PLOT.items()):
         ax = axes[0, i] 
@@ -183,7 +149,7 @@ def main():
             y_axis_min_local, y_axis_max_local = 0, 100
 
 
-        for method_key_plot_loop in METHODS_TO_PLOT: # Renamed method_key
+        for method_key_plot_loop in METHODS_TO_PLOT: 
             method_df = dataset_df[dataset_df['method'] == method_key_plot_loop].sort_values(by='n_value')
             n_value_df = pd.DataFrame({'n_value': N_VALUES})
             method_df_plotting = pd.merge(n_value_df, method_df, on='n_value', how='left')
@@ -223,7 +189,8 @@ def main():
     plt.tight_layout(rect=[0, 0.03, 1, 0.93]) 
 
     config.PLOTS_DIR.mkdir(parents=True, exist_ok=True)
-    output_filename = "self_consistency_scaling.png" # New filename
+    # Changed filename to reflect no caching, if desired, or keep original if versioning by feature
+    output_filename = "self_consistency_scaling_from_csv_no_cache.png" 
     output_filepath = config.PLOTS_DIR / output_filename
 
     try:

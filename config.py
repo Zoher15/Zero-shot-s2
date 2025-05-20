@@ -2,7 +2,6 @@
 
 from pathlib import Path
 
-# Project Root - This assumes config.py is in the project's root directory
 PROJECT_ROOT = Path(__file__).resolve().parent
 
 # --- Input Data Directories ---
@@ -32,7 +31,7 @@ TABLES_DIR = OUTPUTS_DIR / "tables"
 
 # --- Cache Directories (if used by scripts for intermediate results) ---
 CACHE_DIR = PROJECT_ROOT / "cache" # General cache
-F1_PLOT_CACHE_DIR = CACHE_DIR / "f1_cache_plot" # Specific for scaling_consistency.py
+# F1_PLOT_CACHE_DIR = CACHE_DIR / "f1_cache_plot" # Removed as scaling_consistency.py will no longer use it
 CI_CACHE_DIR = CACHE_DIR / "ci_cache" # Specific for macro_f1_bars.py
 PROMPT_TABLE_CACHE_DIR = CACHE_DIR / "prompt_table_cache"
 PROCESSED_AGGREGATE_DATA_PKL = CACHE_DIR / "processed_model_aggregate_data_v2.pkl"
@@ -40,15 +39,10 @@ PROCESSED_INDIVIDUAL_RESPONSES_PKL = CACHE_DIR / "response_cleaned_corpora_v2.pk
 # Add other cache dirs if needed by other scripts
 
 # --- Log file for load_d3.py ---
-# (load_d3.py currently writes 'processing_log.log' to its execution directory.
-# We could centralize this too if desired, e.g., PROJECT_ROOT / "processing_log.log"
-# or OUTPUTS_DIR / "logs" / "load_d3_processing.log")
 LOAD_D3_LOG_FILE = PROJECT_ROOT / "load_d3_processing.log"
 EVAL_QUESTION_PHRASE = "Is this image real or AI-generated?"
 EVAL_ANSWER_PHRASE = "Final Answer(real/ai-generated):"
 
 # --- Potentially other configurations ---
-# Example: NLTK data path if you want to manage it centrally, though NLTK usually handles this.
-# NLTK_DATA_DIR = PROJECT_ROOT / "nltk_data"
 ZERO_PAD_SCORE_TABLES = True
 # You can also add other global settings here if needed later.

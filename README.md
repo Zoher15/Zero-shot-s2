@@ -10,6 +10,7 @@ In this work, we investigate the use of pre-trained Vision-Language Models (VLMs
 
 The central finding of our paper is the `zero-shot-s²` (zero-shot style and synthesis) method.
 
+> [!IMPORTANT]
 > * **To apply our primary method for detecting AI-generated images:** The key is to append the specific phrase **"Let's examine the style and the synthesis artifacts"** to your prompt when using a Vision-Language Model. This simple addition is designed to boost detection performance by guiding the VLM's reasoning. If your goal is to quickly leverage this core technique, this is the main takeaway.
 >
 > * **To reproduce the full experimental results from our paper or to build extensively upon this work:** You will need to follow the detailed setup, data preparation (including downloading and organizing datasets like D3, DF40, and GenImage), and experimental procedures outlined in the subsequent sections of this README.

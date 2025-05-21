@@ -252,7 +252,7 @@ def get_evaluation_args_parser() -> argparse.ArgumentParser: # Added return type
     parser.add_argument("-llm", "--llm", type=str, help="The name of the model", default="qwen25-7b")
     parser.add_argument("-c", "--cuda", type=str, help="CUDA device IDs (e.g., '0' or '0,1')", default="0")
     parser.add_argument("-d", "--dataset", type=str, help="Dataset to use (e.g., 'genimage2k')", default="df402k")
-    parser.add_argument("-b", "--batch_size", type=int, help="Batch size for model inference", default=10)
+    parser.add_argument("-b", "--batch_size", type=int, help="Batch size for model inference", default=30)
     parser.add_argument("-n", "--num", type=int, help="Number of sequences for self-consistency/sampling", default=1)
     return parser
 

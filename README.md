@@ -126,7 +126,9 @@ This command should output the PyTorch version (e.g., `2.7.0+cu126`), confirm CU
 **c. Install `flash-attn`:**
 With PyTorch correctly installed, `flash-attn` can now be installed:
 ```bash
-pip install flash-attn --no-build-isolation
+pip install packaging
+pip install ninja
+pip install flash-attn --no-build-isolation --no-cache-dir
 ```
 
 **d. Install Remaining Dependencies:**

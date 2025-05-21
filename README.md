@@ -219,7 +219,7 @@ Zero-shot-s2/
   * **DF40 Dataset**: ([Original source](https://github.com/YZY-stack/DF40))
 
       * **Image Files**:
-          * Download the required .zip files from the [Google Drive link](https://www.google.com/search?q=https://drive.google.com/drive/folders/1980LCMAutfWvV6zvdxhoeIa67TmzKLQ_)
+          * Download the required .zip files from the [Google Drive link](https://drive.google.com/drive/folders/1980LCMAutfWvV6zvdxhoeIa67TmzKLQ_)
           * You only need to download and unzip the archives for the following generators: `Collabdiff`, `MidJourney`, `stargan`, `starganv2`, `styleclip`, and `whichfaceisreal`. These were chosen because they include real image counterparts.
           * For each downloaded .zip file (e.g., `Collabdiff.zip`), extract its contents into the `Zero-shot-s2/data/df40/` directory. This will typically create a subdirectory named after the archive (e.g., `Zero-shot-s2/data/df40/Collabdiff/`).
             ```bash

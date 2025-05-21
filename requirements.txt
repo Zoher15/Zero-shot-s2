@@ -1,55 +1,3 @@
-# Core ML/DL Frameworks & Accelerators
-accelerate==0.32.1
-bitsandbytes==0.45.5
-einops==0.8.0
-flash-attn==2.7.4.post1
-huggingface-hub==0.30.2
-numpy==1.26.4 # From numpy @ file:///... resolved to a specific version
-packaging==23.2 # From packaging @ file:///... likely resolves to a version like this, check your pip freeze
-pandas==2.2.2
-peft==0.12.0
-Pillow==10.4.0
-protobuf==4.25.7
-python-dateutil==2.9.0.post0 # From python-dateutil @ file:///...
-PyYAML==6.0.1
-qwen-vl-utils==0.0.8
-regex==2024.5.15
-requests==2.32.3
-safetensors==0.4.3
-scikit-learn==1.5.1
-scipy==1.14.0
-sentencepiece==0.2.0
-tokenizers==0.21.1 # From your files, ensure this is the main tokenizers package, not another `tokenizers`
-torch==2.7.0+cu126
-torchaudio==2.7.0+cu126
-torchvision==0.22.0+cu126
-tqdm==4.66.4
-transformers==4.51.3
-trl==0.9.6
-
-# Data Handling & Scientific Computing (already covered above but good to categorize)
-# numpy, pandas, scikit-learn, scipy
-
-# Plotting & Visualization
-cycler==0.12.1 # matplotlib dependency
-fonttools==4.53.1 # matplotlib dependency
-kiwisolver==1.4.7 # matplotlib dependency
-matplotlib==3.9.2
-# pyparsing is a common dependency, but your reqs has pyparsing==3.1.4
-pyparsing==3.1.4
-wordcloud==1.9.4
-
-# NLP Utilities
-nltk==3.9.1
-
-# File/Data Interaction
-datasets==2.20.0
-filelock==3.18.0 # Often used by huggingface_hub, transformers
-
-# Timezone data for pandas
-pytz==2024.1
-tzdata==2024.1
-
 # NVIDIA GPU Libraries (CRITICAL: Ensure these match your target CUDA environment)
 # These are taken directly from your original file for CUDA 12.x focus
 nvidia-cublas-cu12==12.6.4.1
@@ -63,9 +11,50 @@ nvidia-curand-cu12==10.3.7.77
 nvidia-cusolver-cu12==11.7.1.2
 nvidia-cusparse-cu12==12.5.4.2
 nvidia-cusparselt-cu12==0.6.3
-# nvidia-ml-py==12.555.43 # For NVIDIA GPU monitoring, if needed
 nvidia-nccl-cu12==2.26.2
 nvidia-nvjitlink-cu12==12.6.85
 nvidia-nvtx-cu12==12.6.77
-# Note: Your original file also had cu11 versions. I've focused on cu12 based on torch version.
-# If you need cu11, those would need to be added back and torch recompiled/reinstalled for cu11.
+
+accelerate==0.32.1
+bitsandbytes==0.45.5
+einops==0.8.0
+# flash-attn is installed separately
+huggingface-hub==0.30.2
+numpy==1.26.4
+packaging==23.2
+pandas==2.2.2
+peft==0.12.0
+Pillow==10.4.0
+protobuf==4.25.7
+python-dateutil==2.9.0.post0
+PyYAML==6.0.1
+qwen-vl-utils==0.0.8
+regex==2024.5.15
+requests==2.32.3
+safetensors==0.4.3
+scikit-learn==1.5.1
+scipy==1.14.0
+sentencepiece==0.2.0
+tokenizers==0.21.1
+tqdm==4.66.4
+transformers==4.51.3
+trl==0.9.6
+
+# Plotting & Visualization
+cycler==0.12.1
+fonttools==4.53.1
+kiwisolver==1.4.7
+matplotlib==3.9.2
+pyparsing==3.1.4
+wordcloud==1.9.4
+
+# NLP Utilities
+nltk==3.9.1
+
+# File/Data Interaction
+datasets==2.20.0
+filelock==3.18.0
+
+# Timezone data for pandas
+pytz==2024.1
+tzdata==2024.1

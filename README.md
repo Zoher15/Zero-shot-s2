@@ -1,4 +1,4 @@
-# Zero-shot-s<sup>2</sup>: Task-aligned prompting improves zero-shot detection of AI-generated images by Vision-Language Models
+# Zero-shot-s2: Task-aligned prompting improves zero-shot detection of AI-generated images by Vision-Language Models
 
 ## Overview
 
@@ -26,7 +26,7 @@ Our findings highlight that task-aligned prompts can effectively elicit and enha
     - [Example: Evaluating CoDE model on GenImage (2k sample)](#example-evaluating-code-model-on-genimage-2k-sample)
   - [Generating Result Tables and Plots](#generating-result-tables-and-plots)
     - [Example: Generating the Scaling Consistency Plot](#example-generating-the-scaling-consistency-plot)
-  - [Downloading and Preprocessing D3 Dataset Images](https://www.google.com/search?q=%23downloading-and-preprocessing-d3-dataset-images)
+  - [Downloading and Preprocessing D3 Dataset Images](#downloading-and-preprocessing-d3-dataset-images)
 - [Expected Outputs](#expected-outputs)
 - [Troubleshooting](#troubleshooting)
 - [License](#license)
@@ -38,47 +38,45 @@ Our findings highlight that task-aligned prompts can effectively elicit and enha
 ## Repository Structure
 
 ```
-
 Zero-shot-s2/
-├── config.py            \# Central configuration for paths and global parameters
-├── data/                \# Placeholder for input datasets (managed via .gitignore)
-│   ├── d3/              \# D3 dataset images and metadata CSV
-│   ├── df40/            \# DF40 dataset CSVs and image subfolders
-│   └── genimage/        \# GenImage dataset CSVs and image subfolders
-├── experiments/         \# Scripts for running evaluations and data processing
-│   ├── evaluate\_AI\_llama.py
-│   ├── evaluate\_AI\_qwen.py
-│   ├── evaluate\_CoDE.py
-│   └── load\_d3.py
-├── outputs/             \# Default location for generated results, plots, tables
-│   ├── responses/       \# Raw model responses and rationales (JSONL)
-│   ├── scores/          \# Evaluation scores (JSON, CSV)
-│   ├── plots/           \# Generated plots (PNG, PDF)
-│   └── tables/          \# Generated LaTeX tables (.tex)
-├── results/             \# Scripts for generating tables and plots from experiment outputs
-│   ├── combine\_tables.py
-│   ├── distinct\_words.py
-│   ├── find\_images.py
-│   ├── macro\_f1\_bars.py
-│   ├── model\_size\_table.py
-│   ├── prompt\_table.py
-│   ├── recall\_subsets\_table.py
-│   └── scaling\_consistency.py
-├── utils/               \# Utility scripts and shared helper functions
-│   └── helpers.py       \# Core helper functions for data loading, evaluation, etc.
-├── .gitignore           \# Specifies intentionally untracked files (e.g., large data files)
-├── LICENSE.md           \# Project license
-├── README.md            \# This file
-└── requirements.txt     \# Python dependencies
-
-````
+├── config.py            # Central configuration for paths and global parameters
+├── data/                # Placeholder for input datasets (managed via .gitignore)
+│   ├── d3/              # D3 dataset images and metadata CSV
+│   ├── df40/            # DF40 dataset CSVs and image subfolders
+│   └── genimage/        # GenImage dataset CSVs and image subfolders
+├── experiments/         # Scripts for running evaluations and data processing
+│   ├── evaluate_AI_llama.py
+│   ├── evaluate_AI_qwen.py
+│   ├── evaluate_CoDE.py
+│   └── load_d3.py
+├── outputs/             # Default location for generated results, plots, tables
+│   ├── responses/       # Raw model responses and rationales (JSONL)
+│   ├── scores/          # Evaluation scores (JSON, CSV)
+│   ├── plots/           # Generated plots (PNG, PDF)
+│   └── tables/          # Generated LaTeX tables (.tex)
+├── results/             # Scripts for generating tables and plots from experiment outputs
+│   ├── combine_tables.py
+│   ├── distinct_words.py
+│   ├── find_images.py
+│   ├── macro_f1_bars.py
+│   ├── model_size_table.py
+│   ├── prompt_table.py
+│   ├── recall_subsets_table.py
+│   └── scaling_consistency.py
+├── utils/               # Utility scripts and shared helper functions
+│   └── helpers.py       # Core helper functions for data loading, evaluation, etc.
+├── .gitignore           # Specifies intentionally untracked files (e.g., large data files)
+├── LICENSE.md           # Project license
+├── README.md            # This file
+└── requirements.txt     # Python dependencies (for remaining packages after manual install of torch/flash-attn)
+```
 
 ## Prerequisites
 
-* Python (e.g., 3.10+ recommended, verify based on `requirements.txt`)
+* Python (e.g., 3.10+ recommended)
 * `pip` (Python package installer)
 * (Optional) Conda for environment management
-* (Optional but Recommended for speed) NVIDIA GPU with CUDA installed for model inference (refer to PyTorch and Transformers documentation for compatible CUDA versions).
+* (Optional but Recommended for speed) NVIDIA GPU with CUDA installed for model inference. This setup targets CUDA 12.6.
 
 ## Setup
 
@@ -87,32 +85,54 @@ Zero-shot-s2/
 ```bash
 git clone [https://github.com/Zoher15/Zero-shot-s2.git](https://github.com/Zoher15/Zero-shot-s2.git) # Assuming this is the correct URL
 cd Zero-shot-s2
-````
+```
 
-### 2\. Create a Virtual Environment
+
+### 2. Create a Virtual Environment
 
 It is highly recommended to use a virtual environment to manage dependencies.
 
-**Using `venv`:**
+**Using `conda` (Recommended for this project):**
+```bash
+conda create -n zeroshot_s2 python=3.10 -y
+conda activate zeroshot_s2
+```
+(Note: The original README mentioned python=3.10.14; using python=3.10 is generally sufficient.)
 
+**Using `venv`:**
 ```bash
 python -m venv venv
 source venv/bin/activate  # On Windows use: venv\Scripts\activate
 ```
 
-**Using `conda`:**
 
+### 3. Install Dependencies
+
+Due to the specific requirements of PyTorch with CUDA and `flash-attn`, dependencies must be installed in a particular order:
+
+**a. Install PyTorch, Torchvision, and Torchaudio:**
+These packages need to be installed explicitly with CUDA 12.6 support from the specified PyTorch index.
 ```bash
-conda create -n zeroshot_s2 python=3.10.14
-conda activate zeroshot_s2
+pip install --no-cache-dir "torch==2.7.0+cu126" "torchvision==0.22.0+cu126" "torchaudio==2.7.0+cu126" --extra-index-url [https://download.pytorch.org/whl/test/cu126](https://download.pytorch.org/whl/test/cu126)
 ```
 
-### 3\. Install Dependencies
-
-Install the required Python packages using the provided `requirements.txt` file:
-
+**b. Verify PyTorch Installation:**
+After the previous step completes, verify that PyTorch is installed correctly and can access CUDA:
 ```bash
-pip install -r requirements.txt
+python -c "import torch; print(f'PyTorch version: {torch.__version__}'); print(f'CUDA available: {torch.cuda.is_available()}'); print(f'CUDA version used by PyTorch: {torch.version.cuda if torch.cuda.is_available() else None}'); print(f'cuDNN version: {torch.backends.cudnn.version() if torch.cuda.is_available() else None}')"
+```
+This command should output the PyTorch version (e.g., `2.7.0+cu126`), confirm CUDA is available (`True`), and show relevant CUDA/cuDNN versions. If not, troubleshoot the PyTorch installation before proceeding.
+
+**c. Install `flash-attn`:**
+With PyTorch correctly installed, `flash-attn` can now be installed:
+```bash
+pip install --no-cache-dir "flash-attn==2.7.4.post1"
+```
+
+**d. Install Remaining Dependencies:**
+The rest of the dependencies are listed in `requirements.txt`. Install them using:
+```bash
+pip install -r requirements.txt --no-cache-dir
 ```
 
 *(Note: Some scripts, e.g., in `results/`, may require NLTK resources like WordNet, stopwords, and punkt. Utilities within the project, such as `utils/helpers.py` or specific scripts like `results/distinct_words.py`, attempt to download these automatically if they are missing. See Troubleshooting for NLTK `LookupError` if issues arise.)*

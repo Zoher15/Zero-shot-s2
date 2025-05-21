@@ -29,8 +29,8 @@ def initialize_environment(cuda_devices_str: str, seed_value: int = 0):
     os.environ["CUDA_VISIBLE_DEVICES"] = cuda_devices_str
     set_seed(seed_value)
     torch.manual_seed(seed_value)
-    if torch.cuda.is_available():
-        torch.cuda.manual_seed_all(seed_value)
+    # if torch.cuda.is_available():
+    #     torch.cuda.manual_seed_all(seed_value)
     torch.backends.cudnn.deterministic = True
     torch.backends.cudnn.benchmark = False
     logger.info(f"CUDA_VISIBLE_DEVICES set to '{cuda_devices_str}'")
@@ -214,29 +214,6 @@ def load_df40_data_examples(csv_file_path_str: Union[str, Path], image_base_dir_
         example_data['question'] = question_str
         example_data['answer'] = 'real' if str(row['label']).lower() == 'real' else 'ai-generated'
         examples.append(example_data)
-    return examples
-
-
-def load_test_data(dataset_arg: str, config_module: Any, question_phrase: str) -> list:
-    examples = []
-    if 'genimage' in dataset_arg:
-        csv_file_path = config_module.GENIMAGE_2K_CSV_FILE if '2k' in dataset_arg else config_module.GENIMAGE_10K_CSV_FILE
-        # Pass the GENIMAGE_DIR from config
-        examples = load_genimage_data_examples(csv_file_path, config_module.GENIMAGE_DIR, question_phrase)
-    elif 'd3' in dataset_arg:
-        # D3 is already fine as it uses config_module.D3_DIR
-        examples = load_d3_data_examples(config_module.D3_DIR, question_phrase)
-    elif 'df40' in dataset_arg:
-        csv_file_path = config_module.DF40_2K_CSV_FILE if '2k' in dataset_arg else config_module.DF40_10K_CSV_FILE
-        # Pass the DF40_DIR from config
-        examples = load_df40_data_examples(csv_file_path, config_module.DF40_DIR, question_phrase)
-    else:
-        logger.error(f"Dataset '{dataset_arg}' not recognized for path configuration in helpers.load_test_data.")
-        sys.exit(1) # Consider raising an error instead of sys.exit
-
-    random.seed(0) # Assuming you want consistent shuffling
-    random.shuffle(examples)
-    logger.info(f"Loaded and shuffled {len(examples)} examples for dataset '{dataset_arg}'.")
     return examples
 
 def check_nltk_resource(resource_id: str, download_name: Union[str, None] = None) -> None:

@@ -2,10 +2,6 @@ import sys
 from pathlib import Path
 import logging
 import argparse # Keep argparse for specific CoDE arguments if not in helpers
-import os
-import json
-import random
-
 import torch
 import torch.nn as nn
 from torchvision import transforms
@@ -50,10 +46,41 @@ for action in parser._actions:
     if action.dest == 'num': # num_sequences
         action.default = 1 # Not applicable for CoDE
 
+# --- Argument Parsing ---
+parser = argparse.ArgumentParser(description="Vision-Language Model Evaluation Script")
+parser.add_argument("-c", "--cuda", type=str, help="CUDA device IDs (e.g., '0' or '0,1')", default="0")
+parser.add_argument("-d", "--dataset", type=str, help="Dataset to use (e.g., 'genimage2k')", default="df402k")
+parser.add_argument("-b", "--batch_size", type=int, help="Batch size for model inference", default=30)
+parser.llm = "CoDE" # Default for CoDE, not used in the model
+parser.mode = "direct_classification" # Default for CoDE, not used in the model
+parser.num = 1 # Default for CoDE, not used in the model
+parser.prog = "evaluate_CoDE.py"
 args = parser.parse_args()
 
 # --- Environment Initialization ---
 helpers.initialize_environment(args.cuda) # Default seed 0 is handled by initialize_environment
+
+# --- Data Loading Dispatcher ---
+def load_test_data_for_code(dataset_arg_val: str, question_str: str, current_config) -> list:
+    examples = []
+    logger.info(f"Attempting to load dataset for CoDE: {dataset_arg_val}") # Assuming logger is set up
+    if 'genimage' in dataset_arg_val:
+        file_to_load = current_config.GENIMAGE_2K_CSV_FILE if '2k' in dataset_arg_val else current_config.GENIMAGE_10K_CSV_FILE
+        examples = helpers.load_genimage_data_examples(file_to_load, current_config.GENIMAGE_DIR, question_str)
+    elif 'd3' in dataset_arg_val:
+        examples = helpers.load_d3_data_examples(current_config.D3_DIR, question_str)
+    elif 'df40' in dataset_arg_val:
+        file_to_load = current_config.DF40_2K_CSV_FILE if '2k' in dataset_arg_val else current_config.DF40_10K_CSV_FILE
+        examples = helpers.load_df40_data_examples(file_to_load, current_config.DF40_DIR, question_str)
+    # Add other dataset conditions if CoDE supports them, similar to helpers.load_test_data
+    else:
+        logger.error(f"Dataset '{dataset_arg_val}' not recognized for path configuration in CoDE script.")
+        sys.exit(1) # Or raise an error
+
+    random.seed(0) # Ensure consistent shuffle
+    random.shuffle(examples)
+    logger.info(f"Loaded and shuffled {len(examples)} examples for dataset '{dataset_arg_val}'.")
+    return examples
 
 # --- Model Definition and Initialization ---
 class VITContrastiveHF(nn.Module):
@@ -224,7 +251,8 @@ if __name__ == "__main__":
     logger.info(f"Loading dataset: {args.dataset} using helpers...")
     # The question_phrase is not used by CoDE, so an empty string or config.EVAL_QUESTION_PHRASE can be passed.
     # The helpers.load_test_data will add a 'question' field to each example.
-    images_test_data = helpers.load_test_data(args.dataset, config, question_phrase=config.EVAL_QUESTION_PHRASE)
+    question_phrase = config.EVAL_QUESTION_PHRASE
+    images_test_data = load_test_data_for_code(args.dataset, question_phrase, config)
 
     if not images_test_data:
         logger.error(f"Failed to load test data for dataset: {args.dataset}. Exiting.")

@@ -113,7 +113,7 @@ Due to the specific requirements of PyTorch with CUDA and `flash-attn`, dependen
 **a. Install PyTorch, Torchvision, and Torchaudio:**
 These packages need to be installed explicitly with CUDA 12.6 support from the specified PyTorch index.
 ```bash
-pip install --no-cache-dir "torch==2.7.0+cu126" "torchvision==0.22.0+cu126" "torchaudio==2.7.0+cu126" --extra-index-url [https://download.pytorch.org/whl/test/cu126](https://download.pytorch.org/whl/test/cu126)
+pip install --no-cache-dir "torch==2.7.0+cu126" "torchvision==0.22.0+cu126" "torchaudio==2.7.0+cu126" --extra-index-url https://download.pytorch.org/whl/test/cu126
 ```
 
 **b. Verify PyTorch Installation:**

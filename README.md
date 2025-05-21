@@ -83,7 +83,7 @@ Zero-shot-s2/
 ### 1. Clone the Repository
 
 ```bash
-git clone [https://github.com/Zoher15/Zero-shot-s2.git](https://github.com/Zoher15/Zero-shot-s2.git) # Assuming this is the correct URL
+git clone https://github.com/Zoher15/Zero-shot-s2.git # Assuming this is the correct URL
 cd Zero-shot-s2
 ```
 
@@ -124,7 +124,7 @@ python -c "import torch; print(f'PyTorch version: {torch.__version__}'); print(f
 This command should output the PyTorch version (e.g., `2.7.0+cu126`), confirm CUDA is available (`True`), and show relevant CUDA/cuDNN versions. If not, troubleshoot the PyTorch installation before proceeding.
 
 **c. Install `flash-attn`:**
-With PyTorch correctly installed, `flash-attn` can now be installed:
+With PyTorch correctly installed, `flash-attn` can now be installed. We use `ninja` for parallel compilation, which can speed up the process. Please be aware that this step might take a considerable amount of time (potentially up to 16 minutes or more, depending on your system).
 ```bash
 pip install packaging
 pip install ninja

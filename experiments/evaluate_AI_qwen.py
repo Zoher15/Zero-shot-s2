@@ -9,17 +9,11 @@ sys.path.append(str(project_root))
 import config
 from utils import helpers # Main import for our helper functions
 
-import os
-# import argparse # argparse is used via helpers.get_evaluation_args_parser
 import torch
 from transformers import Qwen2_5_VLForConditionalGeneration, AutoProcessor
-import json
 from tqdm import tqdm
-# import re # Re-import if specific regex operations are needed beyond helpers
-from collections import Counter
 import random
-import pandas as pd
-from PIL import Image
+import argparse
 
 # --- Logger Setup ---
 logger = logging.getLogger(__name__)
@@ -31,7 +25,13 @@ if not logger.hasHandlers(): # Configure only if no handlers are set
     )
 
 # --- Argument Parsing ---
-parser = helpers.get_evaluation_args_parser()
+parser = argparse.ArgumentParser(description="Vision-Language Model Evaluation Script")
+parser.add_argument("-m", "--mode", type=str, help="Mode of reasoning", default="zeroshot-2-artifacts")
+parser.add_argument("-llm", "--llm", type=str, help="The name of the model", default="qwen25-7b")
+parser.add_argument("-c", "--cuda", type=str, help="CUDA device IDs (e.g., '0' or '0,1')", default="0")
+parser.add_argument("-d", "--dataset", type=str, help="Dataset to use (e.g., 'genimage2k')", default="df402k")
+parser.add_argument("-b", "--batch_size", type=int, help="Batch size for model inference", default=30)
+parser.add_argument("-n", "--num", type=int, help="Number of sequences for self-consistency/sampling", default=1)
 args = parser.parse_args()
 
 # --- Environment Initialization ---
@@ -61,12 +61,12 @@ def load_test_data_for_qwen(dataset_arg_val: str, question_str: str) -> list:
     logger.info(f"Attempting to load dataset: {dataset_arg_val}")
     if 'genimage' in dataset_arg_val:
         file_to_load = config.GENIMAGE_2K_CSV_FILE if '2k' in dataset_arg_val else config.GENIMAGE_10K_CSV_FILE
-        examples = helpers.load_genimage_data_examples(file_to_load, question_str)
+        examples = helpers.load_genimage_data_examples(file_to_load, config.GENIMAGE_DIR, question_str)
     elif 'd3' in dataset_arg_val:
         examples = helpers.load_d3_data_examples(config.D3_DIR, question_str)
     elif 'df40' in dataset_arg_val:
         file_to_load = config.DF40_2K_CSV_FILE if '2k' in dataset_arg_val else config.DF40_10K_CSV_FILE
-        examples = helpers.load_df40_data_examples(file_to_load, question_str)
+        examples = helpers.load_df40_data_examples(file_to_load, config.DF40_DIR, question_str)
     # "FACES" block is removed
     else:
         logger.error(f"Dataset '{dataset_arg_val}' not recognized for path configuration in Qwen script.")
@@ -80,81 +80,104 @@ def load_test_data_for_qwen(dataset_arg_val: str, question_str: str) -> list:
 # --- Model Response Generation (Qwen-specific functions) ---
 def get_first_responses(prompt_texts, messages_list, model_kwargs_dict):
     model_kwargs_copy = model_kwargs_dict.copy()
-    current_messages_for_processing = []
+    prompt_texts_copy = prompt_texts.copy()
 
-    if len(prompt_texts) == 1:
-        k = model_kwargs_copy.pop('num_return_sequences', 1)
-        prompts_to_encode = prompt_texts * k
-        if messages_list and len(messages_list) == 1:
-            current_messages_for_processing = messages_list * k
+    if len(prompt_texts_copy) == 1:
+        # tokenize the input
+        image_inputs, video_inputs = process_vision_info(messages_list)
+    
+        if 'num_return_sequences' in model_kwargs_copy:
+            k = model_kwargs_copy['num_return_sequences']
+            del model_kwargs_copy['num_return_sequences']
         else:
-            logger.warning("Mismatch or empty messages_list for single prompt in get_first_responses.")
-            current_messages_for_processing = [messages_list[0]] * k if messages_list else []
+            k = 1
+        # create a batch of prompts
+        prompts = prompt_texts_copy * k
+
+        if image_inputs:
+            image_inputs = [[image_inputs[0]]] * k
+        else:
+            image_inputs = None
     else:
-        prompts_to_encode = prompt_texts
-        current_messages_for_processing = messages_list
-
-    image_inputs, video_inputs = process_vision_info(current_messages_for_processing)
-
-    inputs = processor(text=prompts_to_encode, images=image_inputs, videos=video_inputs, padding=True, return_tensors="pt").to(model.device)
+        prompts = prompt_texts_copy
+        image_inputs, video_inputs = process_vision_info(messages_list)
+        image_inputs = [[image] for image in image_inputs]
+    
+    # Encode the prompt
+    inputs = processor(text=prompts, images=image_inputs, videos=video_inputs, padding=True, return_tensors="pt").to(model.device)
     input_length = inputs.input_ids.shape[1]
-
+    
+    # generate the response
     extra_args = {"return_dict_in_generate": True, "output_scores": True, "use_cache": True}
     merged_args = {**inputs, **model_kwargs_copy, **extra_args}
 
-    with torch.no_grad():
+    with torch.no_grad():  # Disable gradient computation
         outputs = model.generate(**merged_args)
-
+    
+    # decode the response
     responses = processor.batch_decode(outputs.sequences[:, input_length:], skip_special_tokens=True, clean_up_tokenization_spaces=False)
 
-    del inputs, image_inputs, video_inputs, outputs
-    torch.cuda.empty_cache()
+    # Free memory
+    del inputs
+    del image_inputs
+    del outputs
+    
     return responses
 
-def get_second_responses(prompt_texts, first_responses, messages_list, model_kwargs_dict, current_answer_phrase):
+# --- Model Response Generation (Qwen-specific functions) ---
+def get_second_responses(prompt_texts, first_responses, messages_list, model_kwargs_dict):
+    # return only 1 sequence for the second responses. query them individually not batch mode
     model_kwargs_copy = model_kwargs_dict.copy()
-    model_kwargs_copy.pop('num_return_sequences', None)
+    
+    if 'num_return_sequences' in model_kwargs_copy:
+        del model_kwargs_copy['num_return_sequences']
+    
+    # the second responses are in greedy mode because we do not want to sample the final answer
     model_kwargs_copy['do_sample'] = False
 
-    first_cut_responses = [fr.split(current_answer_phrase)[0].strip() for fr in first_responses]
-
-    second_pass_prompts = []
-    second_pass_messages = []
-
-    if len(prompt_texts) == 1: # This case is typically when num_return_sequences > 1 for a single example
-        original_single_prompt_full = prompt_texts[0] # This is the P1_qwen which includes the mode suffix
-        # REMOVED: Logic to calculate base_prompt_part by stripping suffix
-        original_single_message_dict = messages_list[0]
-        
-        for first_cut in first_cut_responses:
-            # MODIFIED: Use original_single_prompt_full directly
-            second_pass_prompts.append(f"{original_single_prompt_full} {first_cut} {current_answer_phrase}".strip())
-            second_pass_messages.append(original_single_message_dict) # Image context is still from original messages
+    second_responses = {}
     
-    else: # This case is typically when num_return_sequences == 1 for a batch of examples
-        for i_loop in range(len(first_responses)):
-            original_prompt_full_i = prompt_texts[i_loop] # This is P1_qwen for the i-th item
-            second_pass_prompts.append(f"{original_prompt_full_i} {first_cut_responses[i_loop]} {current_answer_phrase}".strip())
-            second_pass_messages.append(messages_list[i_loop])
+    # Deleting the answer from the first response (if it exists)
+    first_cut_responses = [first_response.split(answer_phrase)[0] for first_response in first_responses]
 
-    image_inputs, video_inputs = process_vision_info(second_pass_messages) # process_vision_info still needed for Qwen
+    # reframing the prompt with the first response
+    if len(prompt_texts) == 1:
+        # tokenize the input
+        image_inputs, video_inputs = process_vision_info(messages_list)
+        
+        prompts = [f"{prompt_texts[0]}{first_cut_response} {answer_phrase}" for first_cut_response in first_cut_responses]
+        if image_inputs:
+            image_inputs1 = [[image_inputs[0]]] * len(prompts)  # Ensure alignment
+        else:
+            image_inputs1 = None
+    else:
+        image_inputs1, video_inputs = process_vision_info(messages_list)
+        prompts = [f"{prompt_texts[i]}{first_cut_response} {answer_phrase}" for i, first_cut_response in enumerate(first_cut_responses)]
+        image_inputs1 = [[image] for image in image_inputs1]  # Ensure alignment
 
-    inputs = processor(text=second_pass_prompts, images=image_inputs, videos=video_inputs, padding=True, return_tensors="pt").to(model.device)
+    # iterate over the prompts (prompt + first responses)
+    prompts_copy = prompts.copy()
+    inputs = processor(text=prompts_copy, images=image_inputs1, videos=video_inputs, padding=True, return_tensors="pt").to(model.device)
     input_length = inputs.input_ids.shape[1]
-
+    
+    # Generate the response
     extra_args = {"return_dict_in_generate": True, "output_scores": True, "use_cache": True}
     merged_args = {**inputs, **model_kwargs_copy, **extra_args}
 
-    with torch.no_grad():
+    with torch.no_grad():  # Disable gradient computation
         outputs = model.generate(**merged_args)
 
+    # decode the response
     trimmed_sequences = outputs.sequences[:, input_length:]
-    second_responses_decoded = processor.batch_decode(trimmed_sequences, skip_special_tokens=True, clean_up_tokenization_spaces=False)
-
-    del inputs, image_inputs, video_inputs, outputs
-    torch.cuda.empty_cache()
-
-    full_responses = [f"{first_cut_responses[i_loop]} {current_answer_phrase}{second_responses_decoded[i_loop]}" for i_loop in range(len(second_responses_decoded))]
+    second_responses = processor.batch_decode(trimmed_sequences, skip_special_tokens=True, clean_up_tokenization_spaces=False)
+    
+    # Free memory
+    del inputs
+    del image_inputs1
+    del outputs
+    
+    # combine the first and second responses
+    full_responses = [f"{first_cut_responses[i]} {answer_phrase}{second_responses[i]}" for i in range(len(second_responses))] 
     return full_responses
 
 # --- Main Evaluation Logic ---
@@ -165,7 +188,7 @@ def eval_AI(instructions_str, current_model_str, mode_type_str, test_data_list, 
     else:
         current_model_kwargs = {"max_new_tokens": 300, "do_sample": True, "repetition_penalty": 1, "top_k": None, "top_p": None, "temperature": 1, "num_return_sequences": num_sequences_arg}
 
-    prompt_orig_messages_examples_list = []
+    prompt_messages_examples_list = []
     for example_item in test_data_list:
         current_item_messages = []
         if instructions_str:
@@ -173,15 +196,13 @@ def eval_AI(instructions_str, current_model_str, mode_type_str, test_data_list, 
 
         user_content_list = []
         image_params = {"type": "image", "image": example_item['image']}
-        if 'resize' in mode_type_str:
-            image_params.update({'resized_height': 2048, 'resized_width': 2048})
         user_content_list.append(image_params)
         user_content_list.append({"type": "text", "text": example_item['question']})
         current_item_messages.append({"role": "user", "content": user_content_list})
 
         prompt_text_from_template = processor.apply_chat_template(current_item_messages, padding=False, tokenize=False, truncation=True, add_generation_prompt=True)
         final_prompt_text = helpers.get_model_guiding_prefix_for_mode(prompt_text_from_template, mode_type_str)
-        prompt_orig_messages_examples_list.append((final_prompt_text, current_item_messages, example_item))
+        prompt_messages_examples_list.append((final_prompt_text, current_item_messages, example_item))
 
     logger.info(f"Running Qwen evaluation: Dataset={args.dataset}, Mode={mode_type_str}, Model={current_model_str}, NumSequences={num_sequences_arg}, BatchSize={current_batch_size}")
 
@@ -193,17 +214,17 @@ def eval_AI(instructions_str, current_model_str, mode_type_str, test_data_list, 
     with tqdm(total=len(test_data_list), dynamic_ncols=True) as pbar:
         actual_inference_batch_size = 1 if num_sequences_arg > 1 else current_batch_size
 
-        for i_loop_main in range(0, len(prompt_orig_messages_examples_list), actual_inference_batch_size): # Renamed loop variable
+        for i_loop_main in range(0, len(prompt_messages_examples_list), actual_inference_batch_size): # Renamed loop variable
             torch.cuda.empty_cache()
 
-            batch_group = prompt_orig_messages_examples_list[i_loop_main : i_loop_main + actual_inference_batch_size]
+            batch_group = prompt_messages_examples_list[i_loop_main : i_loop_main + actual_inference_batch_size]
 
             current_prompt_texts_batch = [p[0] for p in batch_group]
             current_messages_list_batch = [p[1] for p in batch_group]
             current_examples_batch = [p[2] for p in batch_group]
 
             first_responses_raw = get_first_responses(current_prompt_texts_batch, current_messages_list_batch, current_model_kwargs) # use current_model_kwargs
-            full_model_responses = get_second_responses(current_prompt_texts_batch, first_responses_raw, current_messages_list_batch, current_model_kwargs, answer_phrase) # use current_model_kwargs
+            full_model_responses = get_second_responses(current_prompt_texts_batch, first_responses_raw, current_messages_list_batch, current_model_kwargs) # use current_model_kwargs
 
             if actual_inference_batch_size == 1 and num_sequences_arg > 1:
                 example = current_examples_batch[0]
@@ -277,7 +298,7 @@ if __name__ == "__main__":
 
     logger.info(f"Loading Qwen processor: {processor_name_path}")
     processor = AutoProcessor.from_pretrained(processor_name_path)
-    processor.padding_side = "left"
+    processor.tokenizer.padding_side = "left"
     if processor.tokenizer.pad_token is None and processor.tokenizer.eos_token is not None:
         processor.tokenizer.pad_token = processor.tokenizer.eos_token
 

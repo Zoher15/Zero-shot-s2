@@ -3,21 +3,17 @@
 import os
 import json
 import re
-import math
 import string
 from collections import Counter, defaultdict # defaultdict was missing from imports
-import colorsys
 from pathlib import Path
 from typing import List, Tuple, Dict, Any, Set, Union
 import random
 import pandas as pd
-import numpy as np
 from sklearn.metrics import f1_score
 import nltk # Keep nltk import at top level
 from nltk.corpus import stopwords
 from nltk import word_tokenize
 from nltk.stem import WordNetLemmatizer
-import argparse
 import torch
 from transformers import set_seed
 import logging # Import logging
@@ -47,7 +43,6 @@ def validate_answers(
     answer_phrase: str
 ) -> Tuple[int, str, List[str], List[str]]:
     ground_answer = example['answer'].lower().replace("(", "").replace(")", "")
-    pred_answer_final = None
     pred_answers_extracted = []
     rationales_extracted = []
 
@@ -172,21 +167,19 @@ def get_model_guiding_prefix_for_mode(prompt_text: str, mode_type: str) -> str:
             prefix_to_add = text_prefix
             break
     if prefix_to_add: # Ensure space only if prefix is added
-        return f"{prompt_text.rstrip()} {prefix_to_add}" # rstrip to avoid double spaces if prompt_text ends with one
+        return f"{prompt_text}{prefix_to_add}" # rstrip to avoid double spaces if prompt_text ends with one
     return prompt_text
 
 
-def load_genimage_data_examples(file_path: Union[str, Path], question_str: str) -> List[Dict[str, Any]]:
-    csv_file_path = Path(file_path) # Ensure file_path is a Path object
+def load_genimage_data_examples(csv_file_path_str: Union[str, Path], image_base_dir_str: Union[str, Path], question_str: str) -> List[Dict[str, Any]]:
+    csv_file_path = Path(csv_file_path_str)
+    image_base_dir = Path(image_base_dir_str) # Use the provided image base directory
     data = pd.read_csv(csv_file_path)
     examples = []
-    # The base directory for images is the parent directory of the CSV file
-    # e.g., if csv_file_path is 'data/genimage/2k_random_sample.csv', base_image_dir is 'data/genimage/'
-    base_image_dir = csv_file_path.parent
     for _, row in data.iterrows():
         example_data = {}
-        # Prepend the base_image_dir to the relative image path from the CSV
-        example_data['image'] = str(base_image_dir / row['img_path'])
+        # Prepend the image_base_dir to the relative image path from the CSV
+        example_data['image'] = str(image_base_dir / row['img_path'])
         example_data['question'] = question_str
         example_data['answer'] = 'real' if str(row['dataset']).lower() == 'real' else 'ai-generated'
         examples.append(example_data)
@@ -210,17 +203,14 @@ def load_d3_data_examples(dir_path: Union[str, Path], question_str: str) -> List
             })
     return examples
 
-def load_df40_data_examples(file_path: Union[str, Path], question_str: str) -> List[Dict[str, Any]]:
-    csv_file_path = Path(file_path) # Ensure file_path is a Path object
+def load_df40_data_examples(csv_file_path_str: Union[str, Path], image_base_dir_str: Union[str, Path], question_str: str) -> List[Dict[str, Any]]:
+    csv_file_path = Path(csv_file_path_str)
+    image_base_dir = Path(image_base_dir_str) # Use the provided image base directory
     data = pd.read_csv(csv_file_path)
     examples = []
-    # The base directory for images is the parent directory of the CSV file
-    # e.g., if csv_file_path is 'data/df40/2k_sample_df40.csv', base_image_dir is 'data/df40/'
-    base_image_dir = csv_file_path.parent
     for _, row in data.iterrows():
         example_data = {}
-        # Prepend the base_image_dir to the relative image path from the CSV
-        example_data['image'] = str(base_image_dir / row['file_path'])
+        example_data['image'] = str(image_base_dir / row['file_path'])
         example_data['question'] = question_str
         example_data['answer'] = 'real' if str(row['label']).lower() == 'real' else 'ai-generated'
         examples.append(example_data)
@@ -230,31 +220,24 @@ def load_df40_data_examples(file_path: Union[str, Path], question_str: str) -> L
 def load_test_data(dataset_arg: str, config_module: Any, question_phrase: str) -> list:
     examples = []
     if 'genimage' in dataset_arg:
-        file_path = config_module.GENIMAGE_2K_CSV_FILE if '2k' in dataset_arg else config_module.GENIMAGE_10K_CSV_FILE
-        examples = load_genimage_data_examples(file_path, question_phrase)
+        csv_file_path = config_module.GENIMAGE_2K_CSV_FILE if '2k' in dataset_arg else config_module.GENIMAGE_10K_CSV_FILE
+        # Pass the GENIMAGE_DIR from config
+        examples = load_genimage_data_examples(csv_file_path, config_module.GENIMAGE_DIR, question_phrase)
     elif 'd3' in dataset_arg:
+        # D3 is already fine as it uses config_module.D3_DIR
         examples = load_d3_data_examples(config_module.D3_DIR, question_phrase)
     elif 'df40' in dataset_arg:
-        file_path = config_module.DF40_2K_CSV_FILE if '2k' in dataset_arg else config_module.DF40_10K_CSV_FILE
-        examples = load_df40_data_examples(file_path, question_phrase)
+        csv_file_path = config_module.DF40_2K_CSV_FILE if '2k' in dataset_arg else config_module.DF40_10K_CSV_FILE
+        # Pass the DF40_DIR from config
+        examples = load_df40_data_examples(csv_file_path, config_module.DF40_DIR, question_phrase)
     else:
         logger.error(f"Dataset '{dataset_arg}' not recognized for path configuration in helpers.load_test_data.")
-        sys.exit(1)
+        sys.exit(1) # Consider raising an error instead of sys.exit
 
-    random.seed(0)
+    random.seed(0) # Assuming you want consistent shuffling
     random.shuffle(examples)
     logger.info(f"Loaded and shuffled {len(examples)} examples for dataset '{dataset_arg}'.")
     return examples
-
-def get_evaluation_args_parser() -> argparse.ArgumentParser: # Added return type hint
-    parser = argparse.ArgumentParser(description="Vision-Language Model Evaluation Script")
-    parser.add_argument("-m", "--mode", type=str, help="Mode of reasoning", default="zeroshot-2-artifacts")
-    parser.add_argument("-llm", "--llm", type=str, help="The name of the model", default="qwen25-7b")
-    parser.add_argument("-c", "--cuda", type=str, help="CUDA device IDs (e.g., '0' or '0,1')", default="0")
-    parser.add_argument("-d", "--dataset", type=str, help="Dataset to use (e.g., 'genimage2k')", default="df402k")
-    parser.add_argument("-b", "--batch_size", type=int, help="Batch size for model inference", default=30)
-    parser.add_argument("-n", "--num", type=int, help="Number of sequences for self-consistency/sampling", default=1)
-    return parser
 
 def check_nltk_resource(resource_id: str, download_name: Union[str, None] = None) -> None:
     if download_name is None:

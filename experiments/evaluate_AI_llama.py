@@ -8,16 +8,10 @@ sys.path.append(str(project_root))
 import config
 from utils import helpers # Main import for our helper functions
 
-import os
-# import argparse # argparse is used via helpers.get_evaluation_args_parser
 import torch
 from transformers import MllamaForConditionalGeneration, AutoProcessor
-import json
 from tqdm import tqdm
-import re
-from collections import Counter
 import random
-import pandas as pd
 from PIL import Image
 
 # --- Logger Setup ---
@@ -32,7 +26,13 @@ if not logger.hasHandlers(): # Configure only if no handlers are set
     )
 
 # --- Argument Parsing ---
-parser = helpers.get_evaluation_args_parser()
+parser = argparse.ArgumentParser(description="Vision-Language Model Evaluation Script")
+parser.add_argument("-m", "--mode", type=str, help="Mode of reasoning", default="zeroshot-2-artifacts")
+parser.add_argument("-llm", "--llm", type=str, help="The name of the model", default="llama3-11b")
+parser.add_argument("-c", "--cuda", type=str, help="CUDA device IDs (e.g., '0' or '0,1')", default="0")
+parser.add_argument("-d", "--dataset", type=str, help="Dataset to use (e.g., 'genimage2k')", default="df402k")
+parser.add_argument("-b", "--batch_size", type=int, help="Batch size for model inference", default=30)
+parser.add_argument("-n", "--num", type=int, help="Number of sequences for self-consistency/sampling", default=1)
 args = parser.parse_args()
 
 # --- Environment Initialization ---
@@ -259,7 +259,7 @@ if __name__ == "__main__":
 
     logger.info(f"Loading Llama processor: {processor_name_path}")
     processor = AutoProcessor.from_pretrained(processor_name_path)
-    processor.padding_side = "left"
+    processor.tokenizer.padding_side = "left"
     if processor.tokenizer.pad_token is None and processor.tokenizer.eos_token is not None:
         processor.tokenizer.pad_token = processor.tokenizer.eos_token
 

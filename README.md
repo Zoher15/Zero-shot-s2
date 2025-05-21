@@ -1,4 +1,4 @@
-# Zero-shot-s2: Task-aligned prompting improves zero-shot detection of AI-generated images by Vision-Language Models
+# Zero-shot-s<sup>2</sup>: Task-aligned prompting improves zero-shot detection of AI-generated images by Vision-Language Models
 
 ## Overview
 

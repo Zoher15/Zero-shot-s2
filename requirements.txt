@@ -1,19 +1,6 @@
-# NVIDIA GPU Libraries (CRITICAL: Ensure these match your target CUDA environment)
-# These are taken directly from your original file for CUDA 12.x focus
-nvidia-cublas-cu12==12.6.4.1
-nvidia-cuda-cupti-cu12==12.6.80
-nvidia-cuda-nvrtc-cu12==12.6.77
-nvidia-cuda-runtime-cu12==12.6.77
-nvidia-cudnn-cu12==9.5.1.17
-nvidia-cufft-cu12==11.3.0.4
-nvidia-cufile-cu12==1.11.1.6
-nvidia-curand-cu12==10.3.7.77
-nvidia-cusolver-cu12==11.7.1.2
-nvidia-cusparse-cu12==12.5.4.2
-nvidia-cusparselt-cu12==0.6.3
-nvidia-nccl-cu12==2.26.2
-nvidia-nvjitlink-cu12==12.6.85
-nvidia-nvtx-cu12==12.6.77
+# This file lists the remaining Python dependencies after the manual installation of 
+# PyTorch (with CUDA specific to your environment) and flash-attn, 
+# as outlined in the README.md.
 
 accelerate==0.32.1
 bitsandbytes==0.45.5
@@ -21,7 +8,7 @@ einops==0.8.0
 # flash-attn is installed separately
 huggingface-hub==0.30.2
 numpy==1.26.4
-packaging==23.2
+# packaging is installed as part of flash-attn setup (step 3c in README)
 pandas==2.2.2
 peft==0.12.0
 Pillow==10.4.0

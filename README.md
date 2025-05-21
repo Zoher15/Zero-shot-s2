@@ -15,7 +15,7 @@ The central method introduced in our work is `zero-shot-s²` (zero-shot style an
 >
 > * **To reproduce the full experimental results from our paper or to build extensively upon this work:** You will need to follow the detailed setup, data preparation (including downloading and organizing datasets), and experimental procedures outlined in the subsequent sections of this README.
 
-### Applying the `zero-shot-s²` Prompt (Conceptual Example)
+### Applying the `zero-shot-s²` Prompt
 
 ![alt text](image.png)
 
@@ -163,6 +163,9 @@ The original sources for the datasets are:
   * **D3 (and CoDE)**: [https://github.com/aimagelab/CoDE](https://github.com/aimagelab/CoDE)
   * **GenImage**: [https://github.com/GenImage-Dataset/GenImage](https://github.com/GenImage-Dataset/GenImage)
   * **DF40**: [https://github.com/YZY-stack/DF40](https://github.com/YZY-stack/DF40)
+
+![alt text](image-1.png)
+A sample of images from the D3 (top), DF40 (middle), and GenImage (bottom) datasets. Can you guess which ones are real vs AI-generated? The answer is in the footnote on the next page.
 
 The expected structure within `data/` after preparation is:
 

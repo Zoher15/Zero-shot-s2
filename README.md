@@ -165,7 +165,7 @@ The original sources for the datasets are:
   * **DF40**: [https://github.com/YZY-stack/DF40](https://github.com/YZY-stack/DF40)
 
 ![alt text](image-1.png)
-A sample of images from the D3 (top), DF40 (middle), and GenImage (bottom) datasets. Can you guess which ones are real vs AI-generated? The answer is in the footnote on the next page.
+A sample of images from the D3 (top), DF40 (middle), and GenImage (bottom) datasets. Can you guess which ones are real vs AI-generated? The answer is in the footnote on page 2 of the paper.
 
 The expected structure within `data/` after preparation is:
 

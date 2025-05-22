@@ -92,15 +92,7 @@ Zero-shot-s2/
 
 ## Setup
 
-### 1. Clone the Repository
-
-```bash
-git clone https://github.com/Zoher15/Zero-shot-s2.git
-cd Zero-shot-s2
-```
-
-
-### 2. Create a Virtual Environment
+### 1. Create a Virtual Environment
 
 It is highly recommended to use a virtual environment to manage dependencies.
 
@@ -118,7 +110,7 @@ source venv/bin/activate  # On Windows use: venv\Scripts\activate
 ```
 
 
-### 3. Install Dependencies
+### 2. Install Dependencies
 
 Due to the specific requirements of PyTorch with CUDA and `flash-attn`, dependencies must be installed in a particular order:
 
@@ -151,7 +143,7 @@ pip install -r requirements.txt --no-cache-dir
 
 *(Note: Some scripts, e.g., in `results/`, may require NLTK resources like WordNet, stopwords, and punkt. Utilities within the project, such as `utils/helpers.py` or specific scripts like `results/distinct_words.py`, attempt to download these automatically if they are missing. See Troubleshooting for NLTK `LookupError` if issues arise.)*
 
-### 4\. Data Preparation
+### 3. Data Preparation
 
 This project requires several datasets. Due to their size, they are not included directly in the repository. You need to download them and organize them according to the structure defined in `config.py`. By default, scripts expect datasets to be in the `Zero-shot-s2/data/` directory.
 

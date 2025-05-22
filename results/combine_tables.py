@@ -119,7 +119,7 @@ def main():
                 methods_to_process_for_model = LLM_METHODS_COMBINE
                 # The original combine_tables used "AI_dev" prefix for LLMs.
                 prefix = "AI_dev" # As per original combine_tables.py
-                filename_template_str = f"{prefix}-{dataset_name_key}-{model_full_name}-{{method}}-n1-wait0-rationales.jsonl"
+                filename_template_str = f"{prefix}-{dataset_name_key}-{model_full_name}-{{method}}-n1-rationales.jsonl"
 
 
             for method_key_internal in methods_to_process_for_model:

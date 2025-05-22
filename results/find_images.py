@@ -79,10 +79,6 @@ def main():
     # wait_val_str = "wait0" # Only include if your filenames consistently have this
 
     # Construct filenames more robustly
-    # If wait_val_str is part of your actual filenames:
-    # file_name_method1 = f"AI_llama-{dataset_identifier}-{model_identifier}-zeroshot-{n_val}-{wait_val_str}-rationales.jsonl"
-    # file_name_method2 = f"AI_llama-{dataset_identifier}-{model_identifier}-zeroshot-cot-{n_val}-{wait_val_str}-rationales.jsonl"
-    # file_name_method3 = f"AI_llama-{dataset_identifier}-{model_identifier}-zeroshot-2-artifacts-{n_val}-{wait_val_str}-rationales.jsonl"
 
     # If -wait0 is omitted when wait is 0 (more likely with current eval script save logic):
     file_name_method1 = f"AI_llama-{dataset_identifier}-{model_identifier}-zeroshot-{n_val}-rationales.jsonl"

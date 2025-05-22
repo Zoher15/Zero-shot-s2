@@ -99,7 +99,6 @@ COLORBLIND_FRIENDLY_PALETTE_DISTINCT = {
     'zeroshot-2-artifacts': "#7F4CA5"
 }
 
-
 # --- Core Logic Functions (Log Odds, Plotting - with logging) ---
 
 def extract_texts_from_rationale_records(rationale_records: list, text_field_key: str = 'rationales') -> list:
@@ -238,7 +237,6 @@ def generate_wordcloud_from_scores_local(word_scores_wc: dict, ax_wc, base_color
     ax_wc.set_yticks([])
     ax_wc.axis("off")
 
-
 def generate_response_percentage_barplot_local(top_word_scores_bar: dict, list_of_response_token_sets_bar: list, ax_bar, base_color_hex_bar: str): # Renamed
     word_percentages_bar = {}
     num_responses_bar = len(list_of_response_token_sets_bar)
@@ -275,7 +273,6 @@ def generate_response_percentage_barplot_local(top_word_scores_bar: dict, list_o
     ax_bar.set_xlim(0, max(100, max_percentage_val * 1.15 if max_percentage_val > 0 else 100))
     ax_bar.spines['top'].set_visible(False)
     ax_bar.spines['right'].set_visible(False)
-
 
 # --- Main Execution ---
 def main():
@@ -500,7 +497,6 @@ def main():
             logger.error("Log odds calculation produced no results AND failed for some models.")
         elif not calculation_successful_flag:
             logger.warning("Log odds calculation failed for one or more models. Proceeding with available results.")
-
 
     # --- Generate Combined Word Cloud and Bar Plots ---
     if not all_log_odds_results_main:

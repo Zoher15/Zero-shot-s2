@@ -116,11 +116,11 @@ def get_second_responses(prompt_texts, first_responses, image_paths, model_kwarg
         final_image_inputs = image_inputs * len(second_prompts) if image_inputs else None
     else:
         # Batch size is > 1
-        prompts = [f"{prompt_texts[i]}{first_cut_responses[i]} {answer_phrase}" for i in range(len(first_cut_responses))]
+        second_prompts = [f"{prompt_texts[i]}{first_cut_responses[i]} {answer_phrase}" for i in range(len(first_cut_responses))]
         final_image_inputs = image_inputs
     
     # Encode the prompt        
-    inputs = processor(text=prompts, images=final_image_inputs, padding=True, return_tensors="pt", add_special_tokens=False).to(model.device)
+    inputs = processor(text=second_prompts, images=final_image_inputs, padding=True, return_tensors="pt", add_special_tokens=False).to(model.device)
     input_length = inputs.input_ids.shape[1]
     
     # Generate the response

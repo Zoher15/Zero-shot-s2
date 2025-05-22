@@ -5,23 +5,9 @@ from pathlib import Path
 project_root = Path(__file__).resolve().parent.parent
 sys.path.append(str(project_root))
 
-import argparse # Keep argparse for specific CoDE arguments if not in helpers
-import torch
-import torch.nn as nn
-from torchvision import transforms
-from PIL import Image
-import joblib # For loading CoDE model classifiers
-import transformers
-from huggingface_hub import hf_hub_download
-from tqdm import tqdm
 import config
-from utils import helpers
-import logging
-
-# --- Logger Setup ---
-helpers.setup_global_logger(config.EVAL_CODE_LOG_FILE)
-# Get a logger instance for this specific module.
-logger = logging.getLogger(__name__)
+from utils import helpers # Main import for our helper functions
+import argparse
 
 # --- Argument Parsing ---
 parser = argparse.ArgumentParser(description="Vision-Language Model Evaluation Script")
@@ -35,7 +21,22 @@ parser.prog = "evaluate_CoDE.py"
 args = parser.parse_args()
 
 # --- Environment Initialization ---
-helpers.initialize_environment(args.cuda) # Default seed 0 is handled by initialize_environment
+helpers.initialize_environment(args.cuda)
+
+import torch
+import torch.nn as nn
+from torchvision import transforms
+from PIL import Image
+import joblib # For loading CoDE model classifiers
+import transformers
+from huggingface_hub import hf_hub_download
+from tqdm import tqdm
+import logging
+
+# --- Logger Setup ---
+helpers.setup_global_logger(config.EVAL_CODE_LOG_FILE)
+# Get a logger instance for this specific module.
+logger = logging.getLogger(__name__)
 
 # --- Data Loading Dispatcher ---
 def load_test_data_for_code(dataset_arg_val: str, question_str: str, current_config) -> list:

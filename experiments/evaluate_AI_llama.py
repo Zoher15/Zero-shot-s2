@@ -206,7 +206,7 @@ def eval_AI(instructions_str, current_model_str, mode_type_str, test_data_list, 
                 helpers.update_progress(pbar, correct_count, current_macro_f1 * 100)
             else: # actual_inference_batch_size > 1 (and num_sequences_arg == 1)
                  for idx_in_batch, single_full_response in enumerate(full_model_responses):
-                    example = current_examples_batch[0][idx_in_batch]
+                    example = current_examples_batch[idx_in_batch]
                     prompt_text_for_rationale = current_prompt_texts_batch[idx_in_batch]
                     
                     cur_score, pred_answer_val, pred_answers_list, rationales_list = helpers.validate_answers(

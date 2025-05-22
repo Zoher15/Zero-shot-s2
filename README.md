@@ -26,19 +26,6 @@ We further evaluate the approach across three additional model sizes and observe
 
 Our findings show that task-aligned prompts elicit more focused reasoning and enhance latent capabilities in VLMs, like the detection of AI-generated images—offering a simple, generalizable, and explainable alternative to supervised methods. This repository provides the code and experimental results to support these findings.
 
-## Citation
-
-If you use this code or these findings in your research, please cite:
-
-```bibtex
-@misc{yourproject_neurips2025_submission,
-  author    = {Anonymous Author(s)},
-  title     = {Task-aligned prompting improves zero-shot detection of AI-generated images by Vision-Language Models},
-  year      = {2024},
-  howpublished = {Submitted to NeurIPS 2025.}
-}
-```
-
 ## Table of Contents
 
 - [Repository Structure](#repository-structure)
@@ -377,7 +364,3 @@ A log file (`load_d3_processing.log` by default, path configured by `config.LOAD
         ```
   * **Incorrect File Paths in Scripts**:
       * This should be minimal if `config.py` is used correctly. If you suspect a path issue within a script, verify it's using a variable from `config.py` rather than a hardcoded path.
-
-## License
-
-This project is licensed under the MIT License - see the [`LICENSE.md`](LICENSE.md) file for details.

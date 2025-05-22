@@ -1,6 +1,7 @@
 # utils/helpers.py
 
 import os
+import sys
 import json
 import re
 import string
@@ -19,10 +20,6 @@ import logging # Import logging
 
 # --- Standard Logger for this Module ---
 logger = logging.getLogger(__name__)
-# Basic configuration for the logger if not configured by the calling script
-# This ensures helpers can log even if the main script doesn't set up logging.
-if not logging.getLogger().hasHandlers():
-    logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(name)s - %(message)s')
 
 def setup_global_logger(
     log_file_path_str: Union[str, Path],

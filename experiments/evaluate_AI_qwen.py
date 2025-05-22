@@ -80,56 +80,48 @@ def get_first_responses(prompt_texts, messages_list, model_kwargs_dict):
     prompt_texts_copy = prompt_texts.copy()
 
     if len(prompt_texts_copy) == 1:
-        # tokenize the input
+        # Batch size is 1, so we can use the same image for all prompts
         image_inputs, video_inputs = process_vision_info(messages_list)
-    
-        if 'num_return_sequences' in model_kwargs_copy:
-            k = model_kwargs_copy['num_return_sequences']
-            del model_kwargs_copy['num_return_sequences']
-        else:
-            k = 1
-        # create a batch of prompts
+
+        # If the model is in sampling mode, we need to create multiple copies of the prompt
+        k = model_kwargs_copy.pop('num_return_sequences', 1)
+        # Create a batch of prompts
         prompts = prompt_texts_copy * k
 
         if image_inputs:
-            image_inputs = [[image_inputs[0]]] * k
+            # Ensure the image inputs are aligned with the number of prompts
+            image_inputs = [[image_inputs[0]]] * k # Ensure nested list structure
         else:
             image_inputs = None
     else:
+        # batch size is > 1, so we don't need to create multiple copies of the prompt and the images
         prompts = prompt_texts_copy
         image_inputs, video_inputs = process_vision_info(messages_list)
-        image_inputs = [[image] for image in image_inputs]
+        image_inputs = [[image] for image in image_inputs] # Ensure nested list structure
     
     # Encode the prompt
     inputs = processor(text=prompts, images=image_inputs, videos=video_inputs, padding=True, return_tensors="pt").to(model.device)
     input_length = inputs.input_ids.shape[1]
     
-    # generate the response
+    # Generate the response
     extra_args = {"return_dict_in_generate": True, "output_scores": True, "use_cache": True}
     merged_args = {**inputs, **model_kwargs_copy, **extra_args}
 
     with torch.no_grad():  # Disable gradient computation
         outputs = model.generate(**merged_args)
     
-    # decode the response
+    # Decode the response
     responses = processor.batch_decode(outputs.sequences[:, input_length:], skip_special_tokens=True, clean_up_tokenization_spaces=False)
 
     # Free memory
-    del inputs
-    del image_inputs
-    del outputs
-    
+    del inputs, image_inputs, video_inputs, outputs
+    torch.cuda.empty_cache()
     return responses
 
 # --- Model Response Generation (Qwen-specific functions) ---
 def get_second_responses(prompt_texts, first_responses, messages_list, model_kwargs_dict):
-    # return only 1 sequence for the second responses. query them individually not batch mode
     model_kwargs_copy = model_kwargs_dict.copy()
-    
-    if 'num_return_sequences' in model_kwargs_copy:
-        del model_kwargs_copy['num_return_sequences']
-    
-    # the second responses are in greedy mode because we do not want to sample the final answer
+    model_kwargs_copy.pop('num_return_sequences', None)
     model_kwargs_copy['do_sample'] = False
 
     second_responses = {}
@@ -137,24 +129,24 @@ def get_second_responses(prompt_texts, first_responses, messages_list, model_kwa
     # Deleting the answer from the first response (if it exists)
     first_cut_responses = [first_response.split(answer_phrase)[0] for first_response in first_responses]
 
-    # reframing the prompt with the first response
+    # Reframing the prompt with the first response
     if len(prompt_texts) == 1:
-        # tokenize the input
+        # Batch size is 1, so we can use the same image for all prompts
         image_inputs, video_inputs = process_vision_info(messages_list)
         
-        prompts = [f"{prompt_texts[0]}{first_cut_response} {answer_phrase}" for first_cut_response in first_cut_responses]
+        second_prompts = [f"{prompt_texts[0]}{first_cut_response} {answer_phrase}" for first_cut_response in first_cut_responses]
         if image_inputs:
-            image_inputs1 = [[image_inputs[0]]] * len(prompts)  # Ensure alignment
+            # Ensure the image inputs are aligned with the number of prompts
+            image_inputs = [[image_inputs[0]]] * len(second_prompts) # Ensure nested list structure
         else:
-            image_inputs1 = None
+            image_inputs = None
     else:
-        image_inputs1, video_inputs = process_vision_info(messages_list)
-        prompts = [f"{prompt_texts[i]}{first_cut_response} {answer_phrase}" for i, first_cut_response in enumerate(first_cut_responses)]
-        image_inputs1 = [[image] for image in image_inputs1]  # Ensure alignment
+        image_inputs, video_inputs = process_vision_info(messages_list)
+        second_prompts = [f"{prompt_texts[i]}{first_cut_response} {answer_phrase}" for i, first_cut_response in enumerate(first_cut_responses)]
+        image_inputs = [[image] for image in image_inputs]  # Ensure nested list structure
 
-    # iterate over the prompts (prompt + first responses)
-    prompts_copy = prompts.copy()
-    inputs = processor(text=prompts_copy, images=image_inputs1, videos=video_inputs, padding=True, return_tensors="pt").to(model.device)
+    # Encode the prompt
+    inputs = processor(text=second_prompts, images=image_inputs, videos=video_inputs, padding=True, return_tensors="pt").to(model.device)
     input_length = inputs.input_ids.shape[1]
     
     # Generate the response
@@ -164,17 +156,15 @@ def get_second_responses(prompt_texts, first_responses, messages_list, model_kwa
     with torch.no_grad():  # Disable gradient computation
         outputs = model.generate(**merged_args)
 
-    # decode the response
-    trimmed_sequences = outputs.sequences[:, input_length:]
-    second_responses = processor.batch_decode(trimmed_sequences, skip_special_tokens=True, clean_up_tokenization_spaces=False)
-    
-    # Free memory
-    del inputs
-    del image_inputs1
-    del outputs
+    # Decode the response
+    second_responses = processor.batch_decode(outputs.sequences[:, input_length:], skip_special_tokens=True, clean_up_tokenization_spaces=False)
     
     # combine the first and second responses
     full_responses = [f"{first_cut_responses[i]} {answer_phrase}{second_responses[i]}" for i in range(len(second_responses))] 
+    
+    # Free memory
+    del inputs, image_inputs, video_inputs, outputs
+    torch.cuda.empty_cache()
     return full_responses
 
 # --- Main Evaluation Logic ---

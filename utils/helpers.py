@@ -14,7 +14,6 @@ import nltk # Keep nltk import at top level
 from nltk.corpus import stopwords
 from nltk import word_tokenize
 from nltk.stem import WordNetLemmatizer
-import torch
 from transformers import set_seed
 import logging # Import logging
 
@@ -81,10 +80,12 @@ def setup_global_logger(
 
 def initialize_environment(cuda_devices_str: str, seed_value: int = 0):
     os.environ["CUDA_VISIBLE_DEVICES"] = cuda_devices_str
+    os.environ["PYTORCH_CUDA_ALLOC_CONF"] = "expandable_segments:True"
     set_seed(seed_value)
+    import torch
     torch.manual_seed(seed_value)
-    # if torch.cuda.is_available():
-    #     torch.cuda.manual_seed_all(seed_value)
+    if torch.cuda.is_available():
+        torch.cuda.manual_seed_all(seed_value)
     torch.backends.cudnn.deterministic = True
     torch.backends.cudnn.benchmark = False
     logger.info(f"CUDA_VISIBLE_DEVICES set to '{cuda_devices_str}'")

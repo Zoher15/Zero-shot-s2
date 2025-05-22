@@ -236,16 +236,16 @@ Zero-shot-s2/
 
       * **Image Files**:
           * Download all image archives from the following [Google Drive link](https://drive.google.com/drive/folders/1jGt10bwTbhEZuGXLyvrCuxOI0cBqQ1FS).
-          * The Drive folder contains subfolders for each generator (ADM, BigGAN, glide, Midjourney, stable\_diffusion\_v\_1\_4, stable\_diffusion\_v\_1\_5, VQDM, wukong). Inside each, you will find multipart zip files (e.g., `imagenet_ai_0508_adm.zip.001`, `imagenet_ai_0508_adm.zip.002`).
+          * The Drive folder contains subfolders for each generator (ADM, BigGAN, glide, Midjourney, stable\_diffusion\_v\_1\_4, stable\_diffusion\_v\_1\_5, VQDM, wukong). Inside each, you will find multipart zip files (e.g., `imagenet_ai_0508_adm.zip`, `imagenet_ai_0508_adm.z01`, `imagenet_ai_0508_adm.z02`).
           * Download these multipart zip files for each generator you intend to use.
           * You need to extract these images into the `Zero-shot-s2/data/genimage/` directory, creating subdirectories for each generator.
-          * Use a tool like 7-Zip to extract the multipart archives. For example, to extract images for the ADM generator, ensure all its parts (e.g., `imagenet_ai_0508_adm.zip.001`, `imagenet_ai_0508_adm.zip.002`, etc.) are in the same temporary directory. Then, run the extraction command on the first part file:
+          * Use a tool like 7-Zip to extract the multipart archives. For example, to extract images for the ADM generator, ensure all its parts (e.g., `imagenet_ai_0508_adm.z01`, `imagenet_ai_0508_adm.z02`, etc.) are in the same temporary directory. Then, run the extraction command on the `.zip` file:
             ```bash
             # Example for ADM:
             # cd /path/to/downloaded_adm_parts/
-            # 7z x imagenet_ai_0508_adm.zip.001 -o /path/to/Zero-shot-s2/data/genimage/ADM
+            # 7z x imagenet_ai_0508_adm.zip -o /path/to/Zero-shot-s2/data/genimage/ADM
             ```
-            This command tells 7-Zip to extract `imagenet_ai_0508_adm.zip.001` and it will automatically find the other parts. The `-o` flag specifies the output directory, creating an `ADM` subfolder inside `Zero-shot-s2/data/genimage/`. Repeat for all generator folders, adjusting the output path accordingly (e.g., `-o /path/to/Zero-shot-s2/data/genimage/BigGAN`).
+            This command tells 7-Zip to extract `imagenet_ai_0508_adm.zip` and it will automatically find the other parts as long as they're in the same directory. The `-o` flag specifies the output directory, creating an `ADM` subfolder inside `Zero-shot-s2/data/genimage/`. Repeat for all generator folders, adjusting the output path accordingly (e.g., `-o /path/to/Zero-shot-s2/data/genimage/BigGAN`).
           * The final structure should result in folders like `Zero-shot-s2/data/genimage/ADM/`, `Zero-shot-s2/data/genimage/BigGAN/`, etc., each containing the respective images.
       * **CSV Files**: Ensure the respective CSV files (`10k_random_sample.csv`, `2k_random_sample.csv`) are in the `Zero-shot-s2/data/genimage/` directory. The specific filenames for CSVs are defined in `config.py` (e.g., `config.GENIMAGE_2K_CSV_FILE`). The image paths within these CSVs should be relative to the `data/genimage/` directory (e.g., `ADM/image1.png`) or be absolute paths that your system can access, corresponding to the extracted image locations.
 

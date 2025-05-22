@@ -1,6 +1,5 @@
 import sys
 from pathlib import Path
-import logging # Added logging
 
 # Add project root to sys.path
 project_root = Path(__file__).resolve().parent.parent
@@ -14,15 +13,12 @@ from transformers import Qwen2_5_VLForConditionalGeneration, AutoProcessor
 from tqdm import tqdm
 import random
 import argparse
+import logging
 
 # --- Logger Setup ---
+helpers.setup_global_logger(config.EVAL_QWEN_LOG_FILE)
+# Get a logger instance for this specific module.
 logger = logging.getLogger(__name__)
-if not logger.hasHandlers(): # Configure only if no handlers are set
-    logging.basicConfig(
-        level=logging.INFO,
-        format='%(asctime)s - %(levelname)s - %(name)s - %(message)s',
-        stream=sys.stdout
-    )
 
 # --- Argument Parsing ---
 parser = argparse.ArgumentParser(description="Vision-Language Model Evaluation Script")

@@ -1,4 +1,3 @@
-import os
 import sys
 from pathlib import Path
 import logging # For logging
@@ -21,9 +20,9 @@ import config
 from utils import helpers
 
 # --- Logger Setup ---
+helpers.setup_global_logger(config.RESULTS_MACRO_F1_BARS_LOG_FILE)
+# Get a logger instance for this specific module.
 logger = logging.getLogger(__name__)
-if not logging.getLogger().hasHandlers():
-    logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(name)s - %(message)s')
 
 # --- Seed for reproducibility (affects bootstrap sampling) ---
 np.random.seed(0)

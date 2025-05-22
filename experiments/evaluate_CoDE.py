@@ -1,6 +1,10 @@
 import sys
 from pathlib import Path
-import logging
+
+# Add project root to sys.path
+project_root = Path(__file__).resolve().parent.parent
+sys.path.append(str(project_root))
+
 import argparse # Keep argparse for specific CoDE arguments if not in helpers
 import torch
 import torch.nn as nn
@@ -10,41 +14,14 @@ import joblib # For loading CoDE model classifiers
 import transformers
 from huggingface_hub import hf_hub_download
 from tqdm import tqdm
-import pandas as pd
-
-# Add project root to sys.path
-project_root = Path(__file__).resolve().parent.parent
-sys.path.append(str(project_root))
-
 import config
 from utils import helpers
+import logging
 
 # --- Logger Setup ---
+helpers.setup_global_logger(config.EVAL_CODE_LOG_FILE)
+# Get a logger instance for this specific module.
 logger = logging.getLogger(__name__)
-if not logger.hasHandlers():
-    logging.basicConfig(
-        level=logging.INFO,
-        format='%(asctime)s - %(levelname)s - %(name)s - %(message)s',
-        stream=sys.stdout
-    )
-
-# --- Argument Parsing ---
-# Using helpers.get_evaluation_args_parser() and adding CoDE specific args if any.
-# For CoDE, 'mode' and 'num_sequences' from the helper parser might not be directly applicable
-# or could be used with a default/fixed value. 'llm' is also not applicable.
-# We'll use the basic args from helpers and ignore ones that don't fit CoDE.
-parser = helpers.get_evaluation_args_parser()
-# Override or ignore LLM-specific arguments not relevant to CoDE
-parser.prog = "evaluate_CoDE.py" # Show correct script name in help
-# Remove arguments not applicable to CoDE or set defaults
-for action in parser._actions:
-    if action.dest == 'llm':
-        action.required = False # No LLM model name for CoDE
-        action.default = "CoDE" # Set a default if needed internally by helpers
-    if action.dest == 'mode':
-        action.default = "direct_classification" # CoDE doesn't have modes like zeroshot-cot
-    if action.dest == 'num': # num_sequences
-        action.default = 1 # Not applicable for CoDE
 
 # --- Argument Parsing ---
 parser = argparse.ArgumentParser(description="Vision-Language Model Evaluation Script")

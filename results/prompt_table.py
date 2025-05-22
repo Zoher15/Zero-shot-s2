@@ -17,10 +17,9 @@ import config
 from utils import helpers
 
 # --- Logger Setup ---
+helpers.setup_global_logger(config.RESULTS_PROMPT_TABLE_LOG_FILE)
+# Get a logger instance for this specific module.
 logger = logging.getLogger(__name__)
-# BasicConfig for standalone running, adjust as needed or rely on a main script's config
-if not logging.getLogger().hasHandlers():
-    logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(name)s - %(message)s')
 
 # --- Seed for reproducibility (from original script) ---
 np.random.seed(0)

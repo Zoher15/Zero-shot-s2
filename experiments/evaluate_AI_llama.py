@@ -1,7 +1,7 @@
 import sys
 from pathlib import Path
-import logging # Added logging
 
+# Add project root to sys.path
 project_root = Path(__file__).resolve().parent.parent
 sys.path.append(str(project_root))
 
@@ -14,17 +14,12 @@ from tqdm import tqdm
 import random
 from PIL import Image
 import argparse
+import logging
 
 # --- Logger Setup ---
-# Basic configuration for the logger.
-# If you have a central logging configuration in your project, this could be part of it.
+helpers.setup_global_logger(config.EVAL_QWEN_LOG_FILE)
+# Get a logger instance for this specific module.
 logger = logging.getLogger(__name__)
-if not logger.hasHandlers(): # Configure only if no handlers are set
-    logging.basicConfig(
-        level=logging.INFO,
-        format='%(asctime)s - %(levelname)s - %(name)s - %(message)s',
-        stream=sys.stdout # Default to stdout, can be changed to a file
-    )
 
 # --- Argument Parsing ---
 parser = argparse.ArgumentParser(description="Vision-Language Model Evaluation Script")

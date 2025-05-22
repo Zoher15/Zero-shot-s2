@@ -1,8 +1,6 @@
-import os
 import sys
 from pathlib import Path
 import logging
-import json
 import re
 import math
 import string
@@ -28,10 +26,9 @@ import config
 from utils import helpers # Import your helpers module
 
 # --- Logger Setup ---
+helpers.setup_global_logger(config.RESULTS_DISTINCT_WORDS_LOG_FILE)
+# Get a logger instance for this specific module.
 logger = logging.getLogger(__name__)
-if not logging.getLogger().hasHandlers():
-    logging.basicConfig(level=logging.INFO,
-                        format='%(asctime)s - %(levelname)s - %(name)s - %(message)s')
 
 # --- NLTK Resource Check (using helper) ---
 # This ensures resources are available before WordNetLemmatizer() is called or stopwords are used.

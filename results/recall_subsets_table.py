@@ -16,10 +16,9 @@ import config
 from utils import helpers # Import your helpers module
 
 # --- Logger Setup ---
+helpers.setup_global_logger(config.RESULTS_RECALL_SUBSETS_TABLE_LOG_FILE)
+# Get a logger instance for this specific module.
 logger = logging.getLogger(__name__)
-if not logger.hasHandlers(): # Ensure logger is configured
-    logging.basicConfig(level=logging.INFO,
-                        format='%(asctime)s - %(levelname)s - %(name)s - %(message)s')
 
 # --- Configuration (from original script, can be moved to config.py or a specific table_config.py if desired) ---
 

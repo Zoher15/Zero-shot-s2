@@ -13,14 +13,9 @@ import config # For accessing configured paths like RESPONSES_DIR
 from utils import helpers # For utility functions
 
 # --- Logger Setup ---
+helpers.setup_global_logger(config.RESULTS_FIND_IMAGES_LOG_FILE)
+# Get a logger instance for this specific module.
 logger = logging.getLogger(__name__)
-# Basic configuration for the logger. This will apply if no other handlers are configured.
-# You might want a more sophisticated setup in a main application entry point.
-if not logging.getLogger().hasHandlers():
-    logging.basicConfig(
-        level=logging.INFO,
-        format='%(asctime)s - %(levelname)s - %(name)s - %(message)s'
-    )
 
 # find_images_with_specific_scores function remains the same as its core logic is sound.
 # We'll just ensure its print statements (if any were there) are also converted to logger calls.

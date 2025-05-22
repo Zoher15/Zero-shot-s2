@@ -7,7 +7,6 @@ import string
 from collections import Counter, defaultdict # defaultdict was missing from imports
 from pathlib import Path
 from typing import List, Tuple, Dict, Any, Set, Union
-import random
 import pandas as pd
 from sklearn.metrics import f1_score
 import nltk # Keep nltk import at top level
@@ -24,6 +23,64 @@ logger = logging.getLogger(__name__)
 # This ensures helpers can log even if the main script doesn't set up logging.
 if not logging.getLogger().hasHandlers():
     logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(name)s - %(message)s')
+
+def setup_global_logger(
+    log_file_path_str: Union[str, Path],
+    file_log_level: int = logging.INFO,
+    console_log_level: int = logging.INFO,
+    file_log_format: str = '%(asctime)s - %(levelname)s - %(name)s - %(module)s.%(funcName)s:%(lineno)d - %(message)s',
+    console_log_format: str = '%(asctime)s - %(levelname)s - %(name)s - %(message)s',
+    file_log_mode: str = 'a'
+) -> None:
+    """
+    Sets up a global logger that logs to a specified file and the console.
+    Configures the root logger with these handlers, ensuring handlers are not duplicated.
+
+    Args:
+        log_file_path_str: Path to the log file.
+        file_log_level: Logging level for the file handler.
+        console_log_level: Logging level for the console handler.
+        file_log_format: Log format for the file handler.
+        console_log_format: Log format for the console handler.
+        file_log_mode: File mode for the file handler (e.g., 'a' for append, 'w' for write).
+    """
+    log_file_path = Path(log_file_path_str)
+    # Ensure the directory for the log file exists
+    log_file_path.parent.mkdir(parents=True, exist_ok=True)
+
+    root_logger = logging.getLogger() # Get the root logger
+
+    # Set root logger level to the most verbose of the handlers if not already set,
+    # or if current level is less verbose. This allows handlers to control their output.
+    effective_root_level = min(file_log_level, console_log_level)
+    if not root_logger.handlers or root_logger.level > effective_root_level:
+        root_logger.setLevel(effective_root_level)
+
+    # Configure File Handler for the root logger
+    # Check if a FileHandler for this specific file already exists to prevent duplicates
+    file_handler_exists = any(
+        isinstance(h, logging.FileHandler) and h.baseFilename == str(log_file_path)
+        for h in root_logger.handlers
+    )
+    if not file_handler_exists:
+        file_handler = logging.FileHandler(filename=str(log_file_path), mode=file_log_mode)
+        file_handler.setLevel(file_log_level)
+        file_formatter = logging.Formatter(file_log_format)
+        file_handler.setFormatter(file_formatter)
+        root_logger.addHandler(file_handler)
+
+    # Configure Console Handler (StreamHandler) for the root logger
+    # Check if a StreamHandler to stdout already exists to prevent duplicates
+    console_handler_exists = any(
+        isinstance(h, logging.StreamHandler) and getattr(h, 'stream', None) == sys.stdout
+        for h in root_logger.handlers
+    )
+    if not console_handler_exists:
+        console_handler = logging.StreamHandler(sys.stdout)
+        console_handler.setLevel(console_log_level)
+        console_formatter = logging.Formatter(console_log_format)
+        console_handler.setFormatter(console_formatter)
+        root_logger.addHandler(console_handler)
 
 def initialize_environment(cuda_devices_str: str, seed_value: int = 0):
     os.environ["CUDA_VISIBLE_DEVICES"] = cuda_devices_str

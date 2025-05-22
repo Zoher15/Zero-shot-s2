@@ -1,5 +1,4 @@
 # experiments/load_d3.py
-import os
 import pandas as pd
 from PIL import Image, UnidentifiedImageError
 import tqdm
@@ -10,23 +9,22 @@ from pathlib import Path
 from typing import Union, List, Dict, Set, Any
 import argparse
 import sys
-import ast # <--- Added import for ast.literal_eval
-
-# --- New Import ---
-from datasets import load_dataset
+import ast
 
 # Assuming config.py is in the parent directory of 'experiments'
 project_root = Path(__file__).resolve().parent.parent
 sys.path.append(str(project_root))
+from utils import helpers # Main import for our helper functions
 import config
 
-# --- Configuration ---
-logging.basicConfig(
-    level=logging.INFO,
-    format='%(asctime)s - %(levelname)s - %(message)s',
-    filename=config.LOAD_D3_LOG_FILE,
-    filemode='a'
-)
+# --- New Import ---
+from datasets import load_dataset
+
+# --- Logger Setup ---
+helpers.setup_global_logger(config.LOAD_D3_LOG_FILE)
+
+# Get a logger instance for this specific module.
+logger = logging.getLogger(__name__)
 
 # Constants
 URL_COL = 'url' # Field name for the real image URL in HF dataset item

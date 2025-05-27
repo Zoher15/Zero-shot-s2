@@ -286,7 +286,8 @@ def main():
                     # This was added: method_display_str += f"\\ {DIFF_FONT_SIZE}{{(ours)}}"
                     # Keeping this specific logic for combine_tables.py:
                     if method_key_render == 'zeroshot-2-artifacts': # Specific check
-                         method_display_name += f"\\ {r'\scriptsize'}{{(ours)}}" # Use raw string for font size
+                         scriptsize_str = r'\scriptsize'
+                         method_display_name += f"\\ {scriptsize_str}{{(ours)}}" # Use variable for font size
 
                 row_cells_list.append(method_display_name)
 

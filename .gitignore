@@ -1,17 +1,71 @@
+# IDE and Editor files
 .vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+build/
+develop-eggs/
+dist/
+downloads/
+eggs/
+.eggs/
+lib/
+lib64/
+parts/
+sdist/
+var/
+wheels/
+*.egg-info/
+.installed.cfg
+*.egg
+MANIFEST
+
+# Virtual environments
+.env
+.venv
+env/
+venv/
+ENV/
+env.bak/
+venv.bak/
+
+# Project-specific directories
 logs/
 outputs/
-results/
-*.pyc
+cache/
+data/*/
+!data/*.csv
+!data/*.json
+!data/*.txt
+
+# Generated files and results
+*.log
+*.pkl
+*.pickle
+
+# Image and media files (large datasets)
 *.png
 *.jpg
 *.jpeg
 *.gif
+*.bmp
+*.tiff
+*.webp
 *.mp4
 *.avi
 *.mov
 *.mkv
 *.webm
+
+# Compressed files (datasets)
 *.zip
 *.tar
 *.gz
@@ -23,4 +77,43 @@ results/
 *.tar.xz
 *.tar.lz
 *.tar.Z
-__pycache__/
+
+# Model files and checkpoints
+*.bin
+*.safetensors
+*.pt
+*.pth
+*.ckpt
+*.h5
+*.hdf5
+
+# Jupyter Notebook
+.ipynb_checkpoints
+
+# PyTorch
+*.pth
+*.pt
+
+# Temporary files
+*.tmp
+*.temp
+.DS_Store
+Thumbs.db
+
+# LaTeX auxiliary files
+*.aux
+*.bbl
+*.blg
+*.fdb_latexmk
+*.fls
+*.log
+*.out
+*.synctex.gz
+*.toc
+
+# Keep important config and sample files
+!config.py
+!requirements.txt
+!README.md
+!LICENSE.md
+!*.py

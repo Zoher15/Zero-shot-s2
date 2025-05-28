@@ -403,6 +403,33 @@ python experiments/evaluate_CoDE.py \
 
 Refer to the comprehensive docstrings in each script and `helpers.get_evaluation_args_parser()` for complete argument details.
 
+### GPU Memory Management
+
+The evaluation scripts implement **optimized GPU memory management** to prevent conflicts and ensure efficient resource utilization:
+
+**🔧 CUDA Device Setup:**
+- CUDA environment (`CUDA_VISIBLE_DEVICES`) is set **before** PyTorch initialization
+- This prevents PyTorch from allocating memory on all available GPUs
+- Ensures deterministic device assignment and avoids "CUDA out of memory" conflicts
+
+**💡 Best Practices:**
+```bash
+# Single GPU usage (recommended for large models)
+python experiments/evaluate_AI_qwen.py -c 0 -llm qwen25-32b
+
+# Multi-GPU setup (if needed)
+python experiments/evaluate_AI_qwen.py -c 0,1 -llm qwen25-72b
+
+# Specify non-default GPU to avoid conflicts
+python experiments/evaluate_AI_qwen.py -c 3 -llm qwen25-7b
+```
+
+**⚡ Memory Optimization Features:**
+- Automatic GPU cache clearing between batches
+- Expandable memory segments (`PYTORCH_CUDA_ALLOC_CONF=expandable_segments:True`)
+- Model compilation for improved inference speed
+- Batch size optimization for memory-constrained environments
+
 ### Generating Result Tables and Plots
 
 The `results/` directory contains **comprehensively documented scripts** to process experiment outputs and generate publication-ready tables and plots with **statistical rigor**. All scripts feature detailed docstrings explaining methodology, statistical approaches, and usage.
@@ -515,7 +542,16 @@ A log file (`load_d3_processing.log` by default, path configured by `config.LOAD
   * **CUDA Errors / GPU Issues**:
       * Run `./setup_environment.sh --verify-only` to check your CUDA and PyTorch installation.
       * Ensure PyTorch is installed with the correct CUDA version matching your system's CUDA drivers and GPU architecture.
-      * Check if the correct GPU is visible and selected (e.g., via the `-c` argument in evaluation scripts or `CUDA_VISIBLE_DEVICES` environment variable).
+      * **GPU Memory Management**: The scripts now automatically set `CUDA_VISIBLE_DEVICES` before PyTorch initialization to prevent memory conflicts.
+      * **Memory Conflicts**: If you encounter "CUDA out of memory" errors:
+        - Use `-c` argument to specify specific GPU(s): `python experiments/evaluate_AI_qwen.py -c 1`
+        - Reduce batch size with `-b` argument: `python experiments/evaluate_AI_qwen.py -b 10`
+        - Ensure no other processes are using the GPU: `nvidia-smi`
+      * **Device Selection**: Verify GPU availability and selection:
+        ```bash
+        python -c "import torch; print(f'CUDA available: {torch.cuda.is_available()}'); print(f'Device count: {torch.cuda.device_count()}'); print(f'Current device: {torch.cuda.current_device() if torch.cuda.is_available() else \"None\"}')"
+        ```
+      * **Multi-GPU Setup**: For multi-GPU usage, specify comma-separated device IDs: `-c 0,1,2`
   * **NLTK `LookupError`**:
       * The setup script automatically downloads NLTK data. If you encounter issues, re-run: `./setup_environment.sh`
       * Alternatively, manually download NLTK resources:

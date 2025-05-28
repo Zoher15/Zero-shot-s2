@@ -79,7 +79,6 @@ import nltk # Keep nltk import at top level
 from nltk.corpus import stopwords
 from nltk import word_tokenize
 from nltk.stem import WordNetLemmatizer
-from transformers import set_seed
 import logging # Import logging
 from tqdm import tqdm
 
@@ -171,7 +170,11 @@ def initialize_environment(cuda_devices_str: str, seed_value: int = 0):
     """
     os.environ["CUDA_VISIBLE_DEVICES"] = cuda_devices_str
     os.environ["PYTORCH_CUDA_ALLOC_CONF"] = "expandable_segments:True"
+    
+    # Import transformers here to avoid module-level import before CUDA setup
+    from transformers import set_seed
     set_seed(seed_value)
+    
     import torch
     torch.manual_seed(seed_value)
     if torch.cuda.is_available():

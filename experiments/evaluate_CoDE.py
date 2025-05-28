@@ -38,6 +38,8 @@ Note:
 
 import sys
 from pathlib import Path
+import argparse
+import random  # Required for data shuffling
 
 # Add project root to sys.path for imports
 project_root = Path(__file__).resolve().parent.parent
@@ -45,27 +47,38 @@ sys.path.append(str(project_root))
 
 import config
 from utils import helpers  # Main import for our helper functions
-import argparse
-import random  # Required for data shuffling
 
-# --- Argument Parsing ---
-parser = argparse.ArgumentParser(description="CoDE Model Evaluation Script for AI-Generated Image Detection")
-parser.add_argument("-c", "--cuda", type=str, help="CUDA device IDs (e.g., '0' or '0,1')", default="0")
-parser.add_argument("-d", "--dataset", type=str, help="Dataset to use (genimage2k, d32k, df402k)", default="df402k")
-parser.add_argument("-b", "--batch_size", type=int, help="Batch size for model inference", default=30)
+# =============================================================================
+# EARLY ARGUMENT PARSING FOR CUDA SETUP
+# =============================================================================
+
+def parse_args_early():
+    """Parse arguments early to set CUDA environment before PyTorch import."""
+    parser = argparse.ArgumentParser(description="CoDE Model Evaluation Script for AI-Generated Image Detection")
+    parser.add_argument("-c", "--cuda", type=str, help="CUDA device IDs (e.g., '0' or '0,1')", default="0")
+    parser.add_argument("-d", "--dataset", type=str, help="Dataset to use (genimage2k, d32k, df402k)", default="df402k")
+    parser.add_argument("-b", "--batch_size", type=int, help="Batch size for model inference", default=30)
+    
+    return parser.parse_args()
+
+# Parse arguments and initialize environment BEFORE PyTorch imports
+args = parse_args_early()
 
 # Fixed attributes for CoDE model (not configurable via command line)
-parser.llm = "CoDE"  # Model identifier for logging and output files
-parser.mode = "direct_classification"  # Classification mode (no prompting)
-parser.num = 1  # Number of sequences (always 1 for direct classification)
-parser.prog = "evaluate_CoDE.py"  # Script identifier
-
-args = parser.parse_args()
+args.llm = "CoDE"  # Model identifier for logging and output files
+args.mode = "direct_classification"  # Classification mode (no prompting)
+args.num = 1  # Number of sequences (always 1 for direct classification)
+args.prog = "evaluate_CoDE.py"  # Script identifier
 
 # --- Environment Initialization ---
 helpers.initialize_environment(args.cuda)
 
-# Import PyTorch and related libraries after environment setup
+# --- Logger Setup ---
+helpers.setup_global_logger(config.EVAL_CODE_LOG_FILE)
+import logging
+logger = logging.getLogger(__name__)
+
+# Import PyTorch and related libraries AFTER environment setup
 import torch
 import torch.nn as nn
 from torchvision import transforms
@@ -74,12 +87,6 @@ import joblib  # For loading CoDE model's sklearn classifiers
 import transformers
 from huggingface_hub import hf_hub_download
 from tqdm import tqdm
-import logging
-
-# --- Logger Setup ---
-helpers.setup_global_logger(config.EVAL_CODE_LOG_FILE)
-# Get a logger instance for this specific module
-logger = logging.getLogger(__name__)
 
 
 # --- Data Loading Functions ---

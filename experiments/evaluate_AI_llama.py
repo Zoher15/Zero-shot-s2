@@ -47,6 +47,7 @@ import sys
 from pathlib import Path
 from typing import List, Dict, Any, Tuple
 import logging
+import argparse
 
 # Add project root to sys.path
 project_root = Path(__file__).resolve().parent.parent
@@ -54,8 +55,38 @@ sys.path.append(str(project_root))
 
 import config
 from utils import helpers
-import argparse
 
+# =============================================================================
+# EARLY ARGUMENT PARSING FOR CUDA SETUP
+# =============================================================================
+
+def parse_args_early():
+    """Parse arguments early to set CUDA environment before PyTorch import."""
+    parser = argparse.ArgumentParser(description="Llama Vision-Language Model Evaluation Script")
+    parser.add_argument("-m", "--mode", type=str, default="zeroshot-2-artifacts",
+                       help="Prompting mode (default: zeroshot-2-artifacts)")
+    parser.add_argument("-llm", "--llm", type=str, default="llama3-11b",
+                       help="Llama model name (default: llama3-11b)")
+    parser.add_argument("-c", "--cuda", type=str, default="7",
+                       help="CUDA device IDs (default: 7)")
+    parser.add_argument("-d", "--dataset", type=str, default="df402k",
+                       help="Dataset to evaluate (default: df402k)")
+    parser.add_argument("-b", "--batch_size", type=int, default=20,
+                       help="Batch size for inference (default: 20)")
+    parser.add_argument("-n", "--num", type=int, default=1,
+                       help="Number of sequences for self-consistency (default: 1)")
+    
+    return parser.parse_args()
+
+# Parse arguments and initialize environment BEFORE PyTorch imports
+args = parse_args_early()
+helpers.initialize_environment(args.cuda)
+
+# Set up logging early
+helpers.setup_global_logger(config.EVAL_LLAMA_LOG_FILE)
+logger = logging.getLogger(__name__)
+
+# NOW it's safe to import PyTorch and transformers
 import torch
 from transformers import MllamaForConditionalGeneration, AutoProcessor
 import random
@@ -310,31 +341,6 @@ def create_llama_response_generator(model: Any, processor: Any, mode_type: str):
 
 def main():
     """Main execution function."""
-    # Argument parsing
-    parser = argparse.ArgumentParser(description="Llama Vision-Language Model Evaluation Script")
-    parser.add_argument("-m", "--mode", type=str, default="zeroshot-2-artifacts",
-                       help="Prompting mode (default: zeroshot-2-artifacts)")
-    parser.add_argument("-llm", "--llm", type=str, default="llama3-11b",
-                       help="Llama model name (default: llama3-11b)")
-    parser.add_argument("-c", "--cuda", type=str, default="7",
-                       help="CUDA device IDs (default: 7)")
-    parser.add_argument("-d", "--dataset", type=str, default="df402k",
-                       help="Dataset to evaluate (default: df402k)")
-    parser.add_argument("-b", "--batch_size", type=int, default=20,
-                       help="Batch size for inference (default: 20)")
-    parser.add_argument("-n", "--num", type=int, default=1,
-                       help="Number of sequences for self-consistency (default: 1)")
-    
-    args = parser.parse_args()
-    
-    # Initialize environment
-    helpers.initialize_environment(args.cuda)
-    
-    # Set up logging
-    helpers.setup_global_logger(config.EVAL_LLAMA_LOG_FILE)
-    global logger
-    logger = logging.getLogger(__name__)
-    
     logger.info(f"Starting Llama evaluation with model: {args.llm}")
     logger.info(f"Arguments: {vars(args)}")
     

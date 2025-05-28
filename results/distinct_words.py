@@ -1,3 +1,86 @@
+"""
+Distinctive Word Analysis for Model Reasoning
+
+This script performs linguistic analysis of VLM reasoning patterns by analyzing
+the distinctive vocabulary used across different prompting methods. It uses
+log-odds ratios with informative Dirichlet priors to identify words that are
+characteristically used by specific prompting approaches.
+
+The analysis helps understand how different prompting strategies (zero-shot,
+chain-of-thought, zero-shot-s²) influence the reasoning vocabulary and
+conceptual focus of vision-language models when detecting AI-generated images.
+
+Features:
+- Log-odds ratio calculation with Dirichlet priors for statistical robustness
+- Word cloud generation for visual analysis of distinctive vocabulary  
+- Bar plot analysis showing word frequency and distinctiveness
+- NLTK-based text preprocessing with lemmatization and stopword removal
+- Bootstrap analysis for statistical significance testing
+- Colorblind-friendly visualization with method-specific color coding
+
+Analysis Pipeline:
+1. Load rationale texts from evaluation result files
+2. Preprocess text using NLTK (tokenization, lemmatization, stopword removal)
+3. Calculate log-odds ratios comparing each method against all others
+4. Generate word clouds highlighting method-specific vocabulary
+5. Create bar plots showing distinctive word frequencies
+6. Save visualizations and analysis results
+
+Statistical Methods:
+- Informative Dirichlet priors for smoothing sparse word counts
+- Log-odds ratio calculation: log(p_i/(1-p_i)) - log(p_j/(1-p_j))
+- Variance estimation for statistical significance testing
+- Z-score calculation for filtering statistically significant words
+
+Supported Models:
+- Llama 3.2 11B Vision Instruct (primary focus)
+- Configurable for other VLMs
+
+Supported Methods:
+- zero-shot: Direct classification without additional reasoning
+- zero-shot-cot: Chain-of-thought prompting for step-by-step analysis  
+- zero-shot-s²: Task-aligned prompting focusing on style and artifacts
+
+Text Processing:
+- Tokenization with NLTK word_tokenize
+- Lemmatization using WordNetLemmatizer
+- Stopword removal (English)
+- Punctuation and non-alphabetic token filtering
+- Manual skip word lists for domain-specific filtering
+
+Visualization Options:
+- Word clouds with method-specific color schemes
+- Bar plots showing word frequency percentages
+- Configurable font sizes and layout parameters
+- Publication-ready output formatting
+
+Usage:
+    python results/distinct_words.py
+    
+Output Files:
+    - Word cloud images (PNG format)
+    - Bar plot analysis (PNG format) 
+    - Statistical analysis results (JSON format)
+    - Combined visualization panels
+
+Dependencies:
+    - NLTK (with wordnet, stopwords, punkt resources)
+    - matplotlib for plotting
+    - wordcloud for word cloud generation
+    - tqdm for progress tracking
+
+Configuration:
+    Edit constants at top of script to adjust:
+    - Model and method selection
+    - Visualization parameters
+    - Statistical significance thresholds
+    - Output formatting options
+
+Note:
+    Requires NLTK resources to be downloaded. The script will attempt to
+    download missing resources automatically using helpers.ensure_nltk_resources().
+"""
+
 import sys
 from pathlib import Path
 import logging
@@ -388,7 +471,7 @@ def main():
                         text_to_count = str(text_response_item) # Ensure string
                         text_to_count = re.sub(r'http\S+|www\S+|https\S+', '', text_to_count, flags=re.MULTILINE)
                         text_to_count = ' '.join(text_to_count.split())
-                        temp_translator = str.maketrans('', '', string.punctuation + '’‘“”')
+                        temp_translator = str.maketrans('', '', string.punctuation + '’‘"”')
                         raw_toks = word_tokenize(text_to_count.lower())
                         for rt_item in raw_toks:
                             rt_cleaned_item = rt_item.translate(temp_translator)

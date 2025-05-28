@@ -1,3 +1,98 @@
+"""
+Recall Performance by Subset Analysis Table Generator
+
+This script generates detailed LaTeX tables analyzing recall performance at the
+subset level within each dataset. Unlike macro F1-score analysis, this provides
+granular insights into how well different models detect AI-generated images
+from specific generators or categories within datasets.
+
+The analysis reveals which AI generation methods are most challenging to detect,
+how different prompting strategies perform across generation techniques, and
+whether models have systematic biases toward certain types of synthetic content.
+
+Features:
+- Subset-level recall analysis for granular performance insights
+- Multi-model comparison (VLMs vs traditional computer vision)
+- Method performance comparison with statistical highlighting
+- LaTeX table generation with difference calculations
+- Generator-specific performance patterns identification
+- Professional formatting for academic publications
+
+Dataset Subset Analysis:
+- D3: Multiple AI generation subsets (Stable Diffusion variants, etc.)
+- DF40: DiffusionForensics generators (DDIM, PNDM, different schedulers)
+- GenImage: Various synthetic image generation methods
+
+Supported Models:
+- VLMs: Qwen2.5 7B, Llama 3.2 11B with multiple prompting strategies
+- Computer Vision: CoDE model trained specifically on D3 dataset
+
+Recall Calculation:
+- Subset-level True Positive and False Negative counting
+- Recall = TP / (TP + FN) for each generator subset
+- Handles real vs synthetic classification at generator level
+- Statistical robustness through proper subset stratification
+
+Table Generation Features:
+- LaTeX format with booktabs professional styling
+- Bold highlighting for best performance per subset
+- Percentage difference calculations relative to baseline method
+- Configurable font sizes for different dataset complexities
+- Automatic subset name mapping and abbreviation
+
+Performance Insights:
+- Generator-specific detection difficulty patterns
+- Cross-model consistency in challenging subset identification
+- Method effectiveness variation across generation techniques
+- Real image classification accuracy as baseline
+
+Statistical Analysis:
+- Baseline method comparison (typically zero-shot-cot)
+- Percentage improvement calculations for zero-shot-s²
+- Best performance highlighting per subset
+- Missing data handling for incomplete evaluations
+
+Processing Pipeline:
+1. Load dataset mappings (image filename → generator subset)
+2. Process rationale JSONL files to extract TP/FN counts per subset
+3. Calculate recall scores for each model-method-subset combination
+4. Generate comparative LaTeX tables with statistical highlighting
+5. Save formatted tables with proper academic styling
+
+Usage:
+    python results/recall_subsets_table.py
+    
+Output Files:
+    - Individual LaTeX tables for each dataset
+    - Combined multi-dataset analysis tables
+    - Statistical summary reports
+
+Configuration Options:
+- Model and method selection
+- Baseline method for difference calculations
+- LaTeX formatting parameters (fonts, highlighting)
+- Subset name mapping and abbreviation
+- Statistical significance thresholds
+
+Subset Mappings:
+- Automatic generator name normalization
+- Abbreviation mapping for table compactness
+- Unknown subset handling for new generators
+- Consistent naming across datasets
+
+Dependencies:
+- pandas for data manipulation
+- numpy for statistical calculations
+- Custom helpers module for dataset loading
+- LaTeX formatting utilities
+
+Note:
+    This script provides the most granular analysis in the results pipeline,
+    showing performance at the individual generator level rather than
+    dataset-wide macro metrics. Essential for understanding model limitations
+    and generation technique difficulty patterns.
+"""
+
 import os
 import pandas as pd
 import json
@@ -24,7 +119,7 @@ logger = logging.getLogger(__name__)
 
 # Models, Methods, and Datasets
 MODELS_ABBR = ['qwen2.5', 'llama3.2','CoDE'] # As per original
-MODEL_NAME_MAP_FULL = {'llama3.2': 'llama3-11b', 'qwen2.5': 'qwen25-7b'}
+MODEL_NAME_MAP_FULL = {'llama3.2': 'llama-11b', 'qwen2.5': 'qwen25-7b'}
 
 LLM_METHODS = ['zeroshot', 'zeroshot-cot', 'zeroshot-2-artifacts']
 DATASETS_TO_PROCESS = ['d3', 'df40', 'genimage'] # Renamed from DATASETS to avoid conflict

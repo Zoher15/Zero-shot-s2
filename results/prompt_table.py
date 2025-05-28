@@ -1,3 +1,99 @@
+"""
+Prompting Strategy Comparison Table Generator
+
+This script generates comprehensive LaTeX tables analyzing the impact of different
+prompting strategies on AI-generated image detection performance. It focuses on
+how various prompt formulations, reasoning approaches, and task-aligned guidance
+affect model performance across datasets.
+
+The analysis provides insights into effective prompting techniques for vision-
+language models, comparing everything from simple zero-shot prompts to complex
+task-aligned prompting strategies with specific guidance about visual artifacts.
+
+Features:
+- Comprehensive prompting strategy comparison across methods
+- Task-aligned vs open-ended prompting analysis  
+- User/Assistant dialog format comparison
+- LaTeX table generation with professional formatting
+- Category-based organization (None, User, Assistant, Open-ended, Task-aligned)
+- Performance highlighting and statistical comparison
+
+Prompting Categories:
+- None: Direct classification without additional guidance
+- User: User-provided reasoning guidance in the initial prompt
+- Assistant: Assistant-initiated reasoning without user guidance
+- Open-ended: General reasoning prompts (e.g., "Let's think step by step")
+- Task-aligned: Specific guidance about visual artifacts and style
+
+Supported Prompting Methods:
+- zeroshot: Direct "Is this image real or AI-generated?" 
+- zeroshot-cot: Chain-of-thought reasoning ("Let's think step by step")
+- zeroshot-visualize: Visual analysis prompting ("Let's visualize")
+- zeroshot-examine: General examination prompting ("Let's examine")
+- zeroshot-pixel: Pixel-level analysis ("Let's examine pixel by pixel")
+- zeroshot-style: Style-focused analysis ("Let's examine the style")
+- zeroshot-artifacts: Artifact-focused analysis ("Let's examine the synthesis artifacts")
+- zeroshot-2-artifacts: Combined style and artifact analysis (zero-shot-s²)
+- Multiple artifact variants with different phrasings (scrutinize, analyze, etc.)
+
+Table Types:
+- Table 1: General prompting strategies with simple text prompts
+- Table 2: Structured User/Assistant dialog format comparison
+- Both tables show performance across multiple datasets
+
+Analysis Methodology:
+- Single model focus (typically Qwen2.5-7B) for controlled comparison
+- Cross-dataset consistency analysis
+- Category-wise performance grouping
+- Statistical highlighting of best-performing approaches
+- Prompt text display alongside performance metrics
+
+LaTeX Formatting:
+- Professional table formatting with booktabs
+- Method categorization with visual separators
+- Bold highlighting for best performance per dataset
+- Configurable font sizes and spacing
+- Special formatting for dialog-style prompts
+
+Research Insights:
+- Effectiveness of task-aligned prompting vs general reasoning
+- Impact of specific visual guidance on detection accuracy
+- User vs Assistant reasoning initiation comparison
+- Optimal prompting strategies for different datasets
+
+Usage:
+    python results/prompt_table.py
+    
+Output Files:
+    - LaTeX tables saved to RESULTS_OUTPUT_DIR
+    - Separate tables for different prompting categories
+    - Combined analysis summaries
+
+Configuration Options:
+- Target model selection (focus analysis on specific model)
+- Dataset filtering (subset analysis)
+- Method selection and ordering
+- LaTeX formatting parameters
+- Category definitions and mappings
+
+Data Processing:
+- CSV score file loading and aggregation
+- Prompt text mapping and categorization
+- Performance ranking and statistical highlighting
+- Cross-dataset consistency analysis
+
+Dependencies:
+- pandas for data manipulation
+- numpy for numerical operations
+- Custom helpers module for score loading
+- LaTeX-compatible text formatting utilities
+
+Note:
+    This script provides detailed analysis of prompting effectiveness rather
+    than model comparison. For model scaling analysis, use model_size_table.py
+    or other model-focused analysis scripts.
+"""
+
 import os
 import sys
 from pathlib import Path

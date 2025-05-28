@@ -1,3 +1,94 @@
+"""
+Model Size Scaling Analysis Table Generator
+
+This script generates LaTeX tables analyzing how model performance scales with
+parameter count across different vision-language models. It focuses on comparing
+models within the same family (e.g., Qwen2.5 3B vs 7B vs 32B vs 72B) to
+understand scaling laws for AI-generated image detection tasks.
+
+The analysis helps researchers understand the relationship between model size,
+computational cost, and detection performance, providing insights for optimal
+model selection in resource-constrained environments.
+
+Features:
+- Multi-size model comparison within model families
+- Performance scaling analysis across parameter counts
+- LaTeX table generation with statistical highlighting
+- Automatic model family detection and grouping
+- Percentage improvement calculations between sizes
+- Professional formatting for academic publications
+
+Model Scaling Analysis:
+- Parameter count extraction and numerical sorting
+- Performance comparison across model sizes
+- Percentage improvement calculation relative to baseline
+- Statistical significance highlighting (bold for best performance)
+- Family-wise analysis (Qwen2.5, Llama3.2 families)
+
+Supported Model Families:
+- Qwen2.5: 3B, 7B, 32B, 72B parameter variants
+- Llama3.2: 11B, 90B parameter variants (configurable)
+- Extensible to other model families
+
+Scaling Metrics:
+- Macro F1-score as primary performance indicator
+- Percentage improvements between consecutive sizes
+- Performance per parameter ratios (efficiency analysis)
+- Statistical highlighting of optimal size trade-offs
+
+Table Generation:
+- LaTeX format compatible with academic journals
+- Automatic column formatting based on dataset count
+- Bold highlighting for best performance per dataset
+- Percentage difference annotations
+- Professional typography with configurable fonts
+
+Performance Analysis:
+- Cross-dataset consistency in scaling patterns
+- Method-wise scaling behavior (zero-shot, CoT, zero-shot-s²)
+- Identification of performance plateaus
+- Cost-benefit analysis for model selection
+
+Usage:
+    python results/model_size_table.py
+    
+Output Files:
+    - LaTeX tables saved to RESULTS_OUTPUT_DIR
+    - Scaling analysis summaries
+    - Performance trend visualizations (if enabled)
+
+Configuration Options:
+- Model family selection (focus on specific families)
+- Dataset filtering (subset analysis)
+- Baseline method selection for improvement calculations
+- LaTeX formatting parameters (fonts, highlighting)
+- Statistical significance thresholds
+
+Data Processing:
+- CSV score file loading and parsing
+- Model name parsing using helpers.parse_model_name()
+- Automatic parameter count extraction and sorting
+- Cross-dataset performance aggregation
+- Missing data handling and interpolation
+
+Statistical Highlighting:
+- Bold formatting for maximum scores per dataset
+- Zero-padding for consistent number formatting
+- Percentage calculations with appropriate precision
+- Error handling for missing or invalid scores
+
+Dependencies:
+- pandas for data manipulation
+- numpy for numerical operations
+- pathlib for file system operations
+- Custom helpers module for model parsing
+
+Note:
+    This script focuses on scaling analysis within model families rather than
+    cross-family comparisons. For cross-family analysis, use other table
+    generation scripts in the results/ directory.
+"""
+
 import os
 import sys
 from pathlib import Path

@@ -37,7 +37,7 @@ ENV/
 env.bak/
 venv.bak/
 
-# Project-specific directories
+# Project-specific directories and outputs
 logs/
 outputs/
 cache/
@@ -51,19 +51,26 @@ data/*/
 *.pkl
 *.pickle
 
-# Image and media files (large datasets)
-*.png
-*.jpg
-*.jpeg
-*.gif
-*.bmp
-*.tiff
-*.webp
-*.mp4
-*.avi
-*.mov
-*.mkv
-*.webm
+# Large dataset files (but keep important documentation images)
+data/**/*.png
+data/**/*.jpg
+data/**/*.jpeg
+data/**/*.gif
+data/**/*.bmp
+data/**/*.tiff
+data/**/*.webp
+data/**/*.mp4
+data/**/*.avi
+data/**/*.mov
+data/**/*.mkv
+data/**/*.webm
+
+# Keep documentation images in root
+!image.png
+!image-1.png
+!*.png
+!*.jpg
+!*.jpeg
 
 # Compressed files (datasets)
 *.zip
@@ -90,10 +97,6 @@ data/*/
 # Jupyter Notebook
 .ipynb_checkpoints
 
-# PyTorch
-*.pth
-*.pt
-
 # Temporary files
 *.tmp
 *.temp
@@ -106,14 +109,19 @@ Thumbs.db
 *.blg
 *.fdb_latexmk
 *.fls
-*.log
-*.out
 *.synctex.gz
 *.toc
 
-# Keep important config and sample files
+# Generated plots and tables (outputs)
+outputs/**/*.png
+outputs/**/*.pdf
+outputs/**/*.tex
+outputs/**/*.svg
+
+# Keep important config and documentation files
 !config.py
 !requirements.txt
 !README.md
 !LICENSE.md
+!setup_environment.sh
 !*.py

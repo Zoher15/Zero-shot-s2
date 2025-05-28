@@ -1,279 +1,394 @@
+"""
+Llama Vision-Language Model Evaluation Script
+
+This script evaluates Llama vision-language models for AI-generated image detection
+using the Zero-shot-s² framework. It implements a clean functional approach with
+shared evaluation logic from helpers.py to eliminate code duplication.
+
+The script uses MllamaForConditionalGeneration from Hugging Face and implements
+a two-stage generation process to ensure proper answer formatting. It supports
+all prompting modes and self-consistency evaluation.
+
+Features:
+- Clean functional design without classes
+- Two-stage generation for proper answer formatting
+- All prompting modes: zero-shot, zero-shot-cot, zero-shot-s²
+- Self-consistency with multiple response sampling
+- Memory-efficient processing with GPU cache management
+- Shared evaluation logic with other model scripts
+
+Supported Models:
+- llama3-11b: Llama 3.2 11B Vision Instruct
+- llama3-90b: Llama 3.2 90B Vision Instruct
+
+Usage:
+    python experiments/evaluate_AI_llama.py [options]
+    
+Examples:
+    # Basic zero-shot-s² evaluation
+    python experiments/evaluate_AI_llama.py -m zeroshot-2-artifacts -d df402k
+    
+    # Self-consistency evaluation with 5 samples
+    python experiments/evaluate_AI_llama.py -m zeroshot-2-artifacts -d df402k -n 5
+    
+    # Chain-of-thought evaluation
+    python experiments/evaluate_AI_llama.py -m zeroshot-cot -d genimage2k -b 10
+
+Command Line Arguments:
+    -m, --mode: Prompting mode (default: zeroshot-2-artifacts)
+    -llm, --llm: Llama model name (default: llama3-11b)
+    -c, --cuda: CUDA device IDs (default: 7)
+    -d, --dataset: Dataset to evaluate (default: df402k)
+    -b, --batch_size: Batch size for inference (default: 20)
+    -n, --num: Number of sequences for self-consistency (default: 1)
+"""
+
 import sys
 from pathlib import Path
+from typing import List, Dict, Any, Tuple
+import logging
 
 # Add project root to sys.path
 project_root = Path(__file__).resolve().parent.parent
 sys.path.append(str(project_root))
 
 import config
-from utils import helpers # Main import for our helper functions
+from utils import helpers
 import argparse
-
-# --- Argument Parsing ---
-parser = argparse.ArgumentParser(description="Vision-Language Model Evaluation Script")
-parser.add_argument("-m", "--mode", type=str, help="Mode of reasoning", default="zeroshot-2-artifacts")
-parser.add_argument("-llm", "--llm", type=str, help="The name of the model", default="llama3-11b")
-parser.add_argument("-c", "--cuda", type=str, help="CUDA device IDs (e.g., '0' or '0,1')", default="7")
-parser.add_argument("-d", "--dataset", type=str, help="Dataset to use (e.g., 'genimage2k')", default="df402k")
-parser.add_argument("-b", "--batch_size", type=int, help="Batch size for model inference", default=20)
-parser.add_argument("-n", "--num", type=int, help="Number of sequences for self-consistency/sampling", default=1)
-parser.prog = "evaluate_AI_llama.py"
-args = parser.parse_args()
-
-# --- Environment Initialization ---
-helpers.initialize_environment(args.cuda)
 
 import torch
 from transformers import MllamaForConditionalGeneration, AutoProcessor
-from tqdm import tqdm
 import random
 from PIL import Image
-import logging
 
-# --- Logger Setup ---
-helpers.setup_global_logger(config.EVAL_LLAMA_LOG_FILE)
-# Get a logger instance for this specific module.
-logger = logging.getLogger(__name__)
+# =============================================================================
+# LLAMA MODEL CONFIGURATION
+# =============================================================================
 
-# --- Global Variables & Constants ---
-model_str = args.llm
-question_phrase = config.EVAL_QUESTION_PHRASE
-answer_phrase = config.EVAL_ANSWER_PHRASE
+# Supported Llama models
+LLAMA_MODELS = {
+    "llama3-11b": "meta-llama/Llama-3.2-11B-Vision-Instruct",
+    "llama3-90b": "meta-llama/Llama-3.2-90B-Vision-Instruct",
+}
 
-def load_test_data_for_llama(dataset_arg_val: str, question_str: str) -> list:
+# =============================================================================
+# LLAMA MODEL FUNCTIONS
+# =============================================================================
+
+def load_llama_model(model_name: str) -> Tuple[Any, Any]:
     """
-    Loads and shuffles test data for Qwen evaluation by calling helpers.
+    Load Llama vision-language model and processor.
+    
+    Args:
+        model_name: Name of the Llama model
+        
+    Returns:
+        Tuple of (model, processor)
+        
+    Raises:
+        ValueError: If model name is not supported
     """
-    examples = []
-    logger.info(f"Attempting to load dataset: {dataset_arg_val}")
-    if 'genimage' in dataset_arg_val:
-        file_to_load = config.GENIMAGE_2K_CSV_FILE if '2k' in dataset_arg_val else config.GENIMAGE_10K_CSV_FILE
-        examples = helpers.load_genimage_data_examples(file_to_load, config.GENIMAGE_DIR, question_str)
-    elif 'd3' in dataset_arg_val:
-        examples = helpers.load_d3_data_examples(config.D3_DIR, question_str)
-    elif 'df40' in dataset_arg_val:
-        file_to_load = config.DF40_2K_CSV_FILE if '2k' in dataset_arg_val else config.DF40_10K_CSV_FILE
-        examples = helpers.load_df40_data_examples(file_to_load, config.DF40_DIR, question_str)
-    else:
-        logger.error(f"Dataset '{dataset_arg_val}' not recognized for path configuration in Llama script.")
-        sys.exit(1)
-
-    random.seed(0)
-    random.shuffle(examples)
-    logger.info(f"Loaded and shuffled {len(examples)} examples for dataset '{dataset_arg_val}'.")
-    return examples
-
-# --- Model Response Generation (Llama-specific functions) ---
-def get_first_responses(prompt_texts, image_paths, model_kwargs_dict):
-    model_kwargs_copy = model_kwargs_dict.copy()
-    prompt_texts_copy = prompt_texts.copy()
+    if model_name not in LLAMA_MODELS:
+        available_models = list(LLAMA_MODELS.keys())
+        raise ValueError(f"Unsupported Llama model: {model_name}. Available: {available_models}")
     
-    image_inputs = [[Image.open(image_path).convert("RGB")] for image_path in image_paths]
-
-    if len(prompt_texts_copy) == 1:
-        # If the model is in sampling mode, we need to create multiple copies of the prompt
-        k = model_kwargs_copy.pop('num_return_sequences', 1)
-        prompts = prompt_texts_copy * k
-        final_image_inputs = image_inputs * k if image_inputs else None
-    else:
-        # batch size is > 1, so we don't need to create multiple copies of the prompt and the images
-        prompts = prompt_texts_copy
-        final_image_inputs = image_inputs
+    model_path = LLAMA_MODELS[model_name]
     
-    # Encode the prompt
-    inputs = processor(text=prompts, images=final_image_inputs, padding=True, return_tensors="pt", add_special_tokens=False).to(model.device)
-    input_length = inputs.input_ids.shape[1]
-    
-    # Generate the response
-    extra_args = {"return_dict_in_generate": True, "output_scores": True, "use_cache": True}
-    merged_args = {**inputs, **model_kwargs_copy, **extra_args}
-
-    with torch.no_grad(): # Disable gradient computation
-        outputs = model.generate(**merged_args)
-    
-    # Decode the response
-    responses = processor.batch_decode(outputs.sequences[:, input_length:], skip_special_tokens=True, clean_up_tokenization_spaces=False)
-
-    # Free memory
-    del inputs, final_image_inputs, outputs
-    torch.cuda.empty_cache()
-    return responses
-
-# --- Model Response Generation (Llama-specific functions) ---
-def get_second_responses(prompt_texts, first_responses, image_paths, model_kwargs_dict):
-    model_kwargs_copy = model_kwargs_dict.copy()
-    model_kwargs_copy.pop('num_return_sequences', None)
-    model_kwargs_copy['do_sample'] = False
-
-    image_inputs = [[Image.open(image_path).convert("RGB")] for image_path in image_paths]
-    
-    # Deleting the answer from the first response (if it exists)
-    first_cut_responses = [first_response.split(answer_phrase)[0] for first_response in first_responses]
-
-    if len(prompt_texts) == 1:
-        # Batch size is 1
-        second_prompts = [f"{prompt_texts[0]}{first_cut_response} {answer_phrase}" for first_cut_response in first_cut_responses]
-        final_image_inputs = image_inputs * len(second_prompts) if image_inputs else None
-    else:
-        # Batch size is > 1
-        second_prompts = [f"{prompt_texts[i]}{first_cut_responses[i]} {answer_phrase}" for i in range(len(first_cut_responses))]
-        final_image_inputs = image_inputs
-    
-    # Encode the prompt        
-    inputs = processor(text=second_prompts, images=final_image_inputs, padding=True, return_tensors="pt", add_special_tokens=False).to(model.device)
-    input_length = inputs.input_ids.shape[1]
-    
-    # Generate the response
-    extra_args = {"return_dict_in_generate": True, "output_scores": True, "use_cache": True}
-    merged_args = {**inputs, **model_kwargs_copy, **extra_args}
-    with torch.no_grad(): # Disable gradient computation
-        outputs = model.generate(**merged_args)
-
-    # Decode the response
-    second_responses = processor.batch_decode(outputs.sequences[:, input_length:], skip_special_tokens=True, clean_up_tokenization_spaces=False)
-
-    # Combine the first and second responses
-    full_responses = [f"{first_cut_responses[i]} {answer_phrase}{second_responses[i]}" for i in range(len(second_responses))] 
-    
-    # Free memory
-    del inputs, image_inputs, outputs
-    torch.cuda.empty_cache()
-    return full_responses
-
-
-# --- Main Evaluation Logic ---
-def eval_AI(instructions_str, current_model_str, mode_type_str, test_data_list, num_sequences_arg, current_batch_size):
-    current_model_kwargs = {}
-    if num_sequences_arg == 1:
-        current_model_kwargs = {"max_new_tokens": 300, "do_sample": False, "repetition_penalty": 1, "top_k": None, "top_p": None, "temperature": 1}
-    else:
-        current_model_kwargs = {"max_new_tokens": 300, "do_sample": True, "repetition_penalty": 1, "top_k": None, "top_p": None, "temperature": 1, "num_return_sequences": num_sequences_arg}
-
-    prompt_messages_examples_list = []
-    for example_item in test_data_list:
-        messages = []
-        if instructions_str:
-            messages.append({"role": "system", "content": [{"type": "text", "text": instructions_str}]})
-        messages.append({"role": "user", "content": [{"type": "image"}, {"type": "text", "text": example_item['question']}]})
-        
-        prompt_text_from_template = processor.apply_chat_template(messages, padding=False, tokenize=False, truncation=True, add_generation_prompt=True)
-        final_prompt_text = helpers.get_model_guiding_prefix_for_mode(prompt_text_from_template, mode_type_str)
-        prompt_messages_examples_list.append((final_prompt_text, example_item))
-
-    logger.info(f"Running Llama evaluation: Dataset={args.dataset}, Mode={mode_type_str}, Model={current_model_str}, NumSequences={num_sequences_arg}, BatchSize={current_batch_size}")
-
-    correct_count = 0
-    confusion_matrix_counts = {'TP': 0, 'FP': 0, 'TN': 0, 'FN': 0}
-    rationales_data_output_list = []
-    labels_for_validation = ['ai-generated', 'real']
-
-    with tqdm(total=len(test_data_list), dynamic_ncols=True) as pbar:
-        actual_inference_batch_size = 1 if num_sequences_arg > 1 else current_batch_size
-        
-        for i in range(0, len(prompt_messages_examples_list), actual_inference_batch_size):
-            torch.cuda.empty_cache()
-            
-            batch_group = prompt_messages_examples_list[i:i + actual_inference_batch_size]
-            
-            current_prompt_texts_batch = [p[0] for p in batch_group]
-            current_examples_batch = [p[1] for p in batch_group]
-            current_image_paths_batch = [ex['image'] for ex in current_examples_batch]
-
-            first_responses = get_first_responses(current_prompt_texts_batch, current_image_paths_batch, current_model_kwargs)
-            full_model_responses = get_second_responses(current_prompt_texts_batch, first_responses, current_image_paths_batch, current_model_kwargs)
-
-            if actual_inference_batch_size == 1 and num_sequences_arg > 1:
-                example = current_examples_batch[0]
-                prompt_text_for_rationale = current_examples_batch[0]
-                
-                cur_score, pred_answer_val, pred_answers_list, rationales_list = helpers.validate_answers(
-                    example, full_model_responses, labels_for_validation, answer_phrase
-                )
-                correct_count += cur_score
-                if example['answer'] == 'real':
-                    if cur_score == 1: confusion_matrix_counts['TP'] += 1
-                    else: confusion_matrix_counts['FN'] += 1
-                elif example['answer'] == 'ai-generated': 
-                    if cur_score == 1: confusion_matrix_counts['TN'] += 1 
-                    else: confusion_matrix_counts['FP'] += 1 
-                
-                current_macro_f1 = helpers.get_macro_f1_from_counts(confusion_matrix_counts)
-                rationales_data_output_list.append({
-                    "question": example['question'], "prompt": prompt_text_for_rationale, "image": example['image'],
-                    "rationales": rationales_list, 'ground_answer': example['answer'],
-                    'pred_answers': pred_answers_list, 'pred_answer': pred_answer_val, 'cur_score': cur_score
-                })
-                helpers.update_progress(pbar, correct_count, current_macro_f1 * 100)
-            else: # actual_inference_batch_size > 1 (and num_sequences_arg == 1)
-                 for idx_in_batch, single_full_response in enumerate(full_model_responses):
-                    example = current_examples_batch[idx_in_batch]
-                    prompt_text_for_rationale = current_prompt_texts_batch[idx_in_batch]
-                    
-                    cur_score, pred_answer_val, pred_answers_list, rationales_list = helpers.validate_answers(
-                        example, [single_full_response], labels_for_validation, answer_phrase
-                    )
-                    correct_count += cur_score
-                    if example['answer'] == 'real':
-                        if cur_score == 1: confusion_matrix_counts['TP'] += 1
-                        else: confusion_matrix_counts['FN'] += 1
-                    elif example['answer'] == 'ai-generated':
-                        if cur_score == 1: confusion_matrix_counts['TN'] += 1
-                        else: confusion_matrix_counts['FP'] += 1
-                    
-                    current_macro_f1 = helpers.get_macro_f1_from_counts(confusion_matrix_counts)
-                    rationales_data_output_list.append({
-                        "question": example['question'], "prompt": prompt_text_for_rationale, "image": example['image'],
-                        "rationales": rationales_list, 'ground_answer': example['answer'],
-                        'pred_answers': pred_answers_list, 'pred_answer': pred_answer_val, 'cur_score': cur_score
-                    })
-                    helpers.update_progress(pbar, correct_count, current_macro_f1 * 100)
-
-
-    final_macro_f1 = helpers.get_macro_f1_from_counts(confusion_matrix_counts)
-    helpers.save_evaluation_outputs(
-        rationales_data_output_list, confusion_matrix_counts, final_macro_f1,
-        "AI_llama", args.dataset, current_model_str, mode_type_str, num_sequences_arg, config
-    )
-    return final_macro_f1
-
-# --- Main Execution Block ---
-if __name__ == "__main__":
-    model_dict_llama = {"llama3-11b": "meta-llama/Llama-3.2-11B-Vision-Instruct", 
-                  "llama3-90b": "meta-llama/Llama-3.2-90B-Vision-Instruct"}
-    processor_dict_llama = model_dict_llama.copy()
-    VL_dict = {k: MllamaForConditionalGeneration for k in model_dict_llama.keys()}
-
-    try:
-        model_name_path = model_dict_llama[model_str]
-        processor_name_path = processor_dict_llama[model_str]
-        vl_model_class = VL_dict[model_str]
-    except KeyError:
-        logger.error(f"Model string '{model_str}' not found in Llama dictionaries. Available: {list(model_dict_llama.keys())}")
-        sys.exit(1)
-
-    logger.info(f"Loading Llama processor: {processor_name_path}")
-    processor = AutoProcessor.from_pretrained(processor_name_path)
+    logger.info(f"Loading Llama processor: {model_path}")
+    processor = AutoProcessor.from_pretrained(model_path)
     processor.tokenizer.padding_side = "left"
     if processor.tokenizer.pad_token is None and processor.tokenizer.eos_token is not None:
         processor.tokenizer.pad_token = processor.tokenizer.eos_token
-
-    logger.info(f"Loading Llama model: {model_name_path}")
-    model_load_kwargs = {"torch_dtype": torch.bfloat16, "device_map": "auto"}
-    model = vl_model_class.from_pretrained(model_name_path, **model_load_kwargs).eval()
     
-    logger.info("Compiling the Llama model (this may take a moment)...")
+    logger.info(f"Loading Llama model: {model_path}")
+    model = MllamaForConditionalGeneration.from_pretrained(
+        model_path,
+        torch_dtype=torch.bfloat16,
+        device_map="auto"
+    ).eval()
+    
+    logger.info("Compiling Llama model...")
     try:
         model = torch.compile(model, mode="max-autotune", fullgraph=True)
         logger.info("Llama model compilation complete.")
     except Exception as e:
         logger.warning(f"Llama model compilation failed: {e}. Proceeding without compilation.")
-
-    images_test_data = load_test_data_for_llama(args.dataset, question_phrase)
-    instructions_text = None 
     
-    final_f1_score = eval_AI(
-        instructions_text, model_str, args.mode, images_test_data, args.num, args.batch_size
-    )
+    return model, processor
 
-    logger.info(f"Evaluation finished for Llama model: {model_str} on dataset: {args.dataset} with mode: {args.mode}-n{args.num}")
-    logger.info(f"Final Macro F1: {final_f1_score:.4f}")
+def prepare_llama_prompts(examples: List[Dict], mode_type: str, processor: Any) -> List[str]:
+    """
+    Prepare prompts for Llama evaluation.
+    
+    Args:
+        examples: List of example dictionaries
+        mode_type: Prompting mode
+        processor: Llama processor for chat template
+        
+    Returns:
+        List of formatted prompt strings
+    """
+    instructions_text = helpers.get_instructions_for_mode(mode_type)
+    prompt_texts = []
+    
+    for example in examples:
+        messages = []
+        if instructions_text:
+            messages.append({
+                "role": "system", 
+                "content": [{"type": "text", "text": instructions_text}]
+            })
+        messages.append({
+            "role": "user", 
+            "content": [{"type": "image"}, {"type": "text", "text": example['question']}]
+        })
+        
+        prompt_text = processor.apply_chat_template(
+            messages, 
+            padding=False, 
+            tokenize=False, 
+            truncation=True, 
+            add_generation_prompt=True
+        )
+        
+        # Add mode-specific prefix
+        final_prompt_text = helpers.get_model_guiding_prefix_for_mode(prompt_text, mode_type)
+        prompt_texts.append(final_prompt_text)
+        
+        # Store prompt in example for result saving
+        example['prompt'] = final_prompt_text
+    
+    return prompt_texts
+
+def get_llama_first_responses(model: Any, processor: Any, prompt_texts: List[str], 
+                             image_paths: List[str], model_kwargs: Dict) -> List[str]:
+    """Generate first responses using Llama model."""
+    model_kwargs_copy = model_kwargs.copy()
+    
+    image_inputs = [[Image.open(path).convert("RGB")] for path in image_paths]
+    
+    if len(prompt_texts) == 1:
+        # Self-consistency mode: replicate prompt for multiple sequences
+        k = model_kwargs_copy.pop('num_return_sequences', 1)
+        prompts = prompt_texts * k
+        final_image_inputs = image_inputs * k
+    else:
+        # Batch mode: use prompts as-is
+        prompts = prompt_texts
+        final_image_inputs = image_inputs
+    
+    # Process inputs
+    processor_inputs = processor(
+        text=prompts,
+        images=final_image_inputs,
+        padding=True,
+        return_tensors="pt",
+        add_special_tokens=False
+    ).to(model.device)
+    
+    input_length = processor_inputs.input_ids.shape[1]
+    
+    # Generate responses
+    extra_args = {"return_dict_in_generate": True, "output_scores": True, "use_cache": True}
+    merged_args = {**processor_inputs, **model_kwargs_copy, **extra_args}
+    
+    with torch.no_grad():
+        outputs = model.generate(**merged_args)
+    
+    responses = processor.batch_decode(
+        outputs.sequences[:, input_length:],
+        skip_special_tokens=True,
+        clean_up_tokenization_spaces=False
+    )
+    
+    # Memory cleanup
+    del processor_inputs, final_image_inputs, outputs
+    torch.cuda.empty_cache()
+    
+    return responses
+
+def get_llama_second_responses(model: Any, processor: Any, prompt_texts: List[str],
+                              first_responses: List[str], image_paths: List[str],
+                              model_kwargs: Dict, answer_phrase: str) -> List[str]:
+    """Generate second responses for answer formatting."""
+    model_kwargs_copy = model_kwargs.copy()
+    model_kwargs_copy.pop('num_return_sequences', None)
+    model_kwargs_copy['do_sample'] = False
+    
+    image_inputs = [[Image.open(path).convert("RGB")] for path in image_paths]
+    
+    # Remove existing answer phrases from first responses
+    first_cut_responses = [resp.split(answer_phrase)[0] for resp in first_responses]
+    
+    if len(prompt_texts) == 1:
+        # Self-consistency mode
+        second_prompts = [f"{prompt_texts[0]}{cut_resp} {answer_phrase}"
+                         for cut_resp in first_cut_responses]
+        final_image_inputs = image_inputs * len(second_prompts)
+    else:
+        # Batch mode
+        second_prompts = [f"{prompt_texts[i]}{first_cut_responses[i]} {answer_phrase}"
+                         for i in range(len(first_cut_responses))]
+        final_image_inputs = image_inputs
+    
+    # Process inputs
+    processor_inputs = processor(
+        text=second_prompts,
+        images=final_image_inputs,
+        padding=True,
+        return_tensors="pt",
+        add_special_tokens=False
+    ).to(model.device)
+    
+    input_length = processor_inputs.input_ids.shape[1]
+    
+    # Generate responses
+    extra_args = {"return_dict_in_generate": True, "output_scores": True, "use_cache": True}
+    merged_args = {**processor_inputs, **model_kwargs_copy, **extra_args}
+    
+    with torch.no_grad():
+        outputs = model.generate(**merged_args)
+    
+    second_responses = processor.batch_decode(
+        outputs.sequences[:, input_length:],
+        skip_special_tokens=True,
+        clean_up_tokenization_spaces=False
+    )
+    
+    # Combine first and second responses
+    full_responses = [f"{first_cut_responses[i]} {answer_phrase}{second_responses[i]}"
+                     for i in range(len(second_responses))]
+    
+    # Memory cleanup
+    del processor_inputs, image_inputs, outputs
+    torch.cuda.empty_cache()
+    
+    return full_responses
+
+def create_llama_response_generator(model: Any, processor: Any, mode_type: str):
+    """
+    Create a response generator function for Llama model.
+    
+    This function creates a closure that captures the model, processor, and mode
+    and returns a function compatible with the shared evaluation logic.
+    
+    Args:
+        model: Loaded Llama model
+        processor: Loaded Llama processor  
+        mode_type: Prompting mode
+        
+    Returns:
+        Function that generates responses for batches
+    """
+    def generate_responses(batch_examples: List[Dict], batch_size: int, num_sequences: int) -> List[str]:
+        """Generate responses for a batch of examples."""
+        torch.cuda.empty_cache()
+        
+        # Prepare prompts for this batch
+        batch_prompts = prepare_llama_prompts(batch_examples, mode_type, processor)
+        batch_image_paths = [ex['image'] for ex in batch_examples]
+        
+        # Get generation parameters
+        model_kwargs = helpers.get_generation_kwargs(num_sequences)
+        
+        # Generate responses using two-stage process
+        first_responses = get_llama_first_responses(
+            model, processor, batch_prompts, batch_image_paths, model_kwargs
+        )
+        full_responses = get_llama_second_responses(
+            model, processor, batch_prompts, first_responses, 
+            batch_image_paths, model_kwargs, config.EVAL_ANSWER_PHRASE
+        )
+        
+        return full_responses
+    
+    return generate_responses
+
+# =============================================================================
+# MAIN EXECUTION
+# =============================================================================
+
+def main():
+    """Main execution function."""
+    # Argument parsing
+    parser = argparse.ArgumentParser(description="Llama Vision-Language Model Evaluation Script")
+    parser.add_argument("-m", "--mode", type=str, default="zeroshot-2-artifacts",
+                       help="Prompting mode (default: zeroshot-2-artifacts)")
+    parser.add_argument("-llm", "--llm", type=str, default="llama3-11b",
+                       help="Llama model name (default: llama3-11b)")
+    parser.add_argument("-c", "--cuda", type=str, default="7",
+                       help="CUDA device IDs (default: 7)")
+    parser.add_argument("-d", "--dataset", type=str, default="df402k",
+                       help="Dataset to evaluate (default: df402k)")
+    parser.add_argument("-b", "--batch_size", type=int, default=20,
+                       help="Batch size for inference (default: 20)")
+    parser.add_argument("-n", "--num", type=int, default=1,
+                       help="Number of sequences for self-consistency (default: 1)")
+    
+    args = parser.parse_args()
+    
+    # Initialize environment
+    helpers.initialize_environment(args.cuda)
+    
+    # Set up logging
+    helpers.setup_global_logger(config.EVAL_LLAMA_LOG_FILE)
+    global logger
+    logger = logging.getLogger(__name__)
+    
+    logger.info(f"Starting Llama evaluation with model: {args.llm}")
+    logger.info(f"Arguments: {vars(args)}")
+    
+    # Validate model name
+    if args.llm not in LLAMA_MODELS:
+        available_models = list(LLAMA_MODELS.keys())
+        logger.error(f"Unsupported model: {args.llm}. Available models: {available_models}")
+        sys.exit(1)
+    
+    # Load test data
+    question_phrase = config.EVAL_QUESTION_PHRASE
+    test_data = helpers.load_test_data_unified(args.dataset, question_phrase, config)
+    
+    if not test_data:
+        logger.error(f"Failed to load test data for dataset: {args.dataset}")
+        sys.exit(1)
+    
+    logger.info(f"Successfully loaded {len(test_data)} examples for dataset '{args.dataset}'")
+    
+    # Load Llama model
+    try:
+        model, processor = load_llama_model(args.llm)
+        logger.info(f"Successfully loaded Llama model: {args.llm}")
+    except Exception as e:
+        logger.error(f"Failed to load Llama model {args.llm}: {e}", exc_info=True)
+        sys.exit(1)
+    
+    # Create response generator
+    response_generator = create_llama_response_generator(model, processor, args.mode)
+    
+    # Run evaluation using shared logic
+    try:
+        final_f1_score = helpers.run_model_evaluation(
+            test_data=test_data,
+            response_generator_fn=response_generator,
+            model_name=args.llm,
+            mode_type=args.mode,
+            num_sequences=args.num,
+            batch_size=args.batch_size,
+            dataset_name=args.dataset,
+            model_prefix="AI_llama",
+            config_module=config
+        )
+        
+        logger.info(f"Evaluation completed successfully!")
+        logger.info(f"Model: {args.llm}")
+        logger.info(f"Dataset: {args.dataset}")
+        logger.info(f"Mode: {args.mode}")
+        logger.info(f"Sequences: {args.num}")
+        logger.info(f"Final Macro F1-Score: {final_f1_score:.4f}")
+        
+    except Exception as e:
+        logger.error(f"Evaluation failed: {e}", exc_info=True)
+        sys.exit(1)
+
+if __name__ == "__main__":
+    main()

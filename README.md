@@ -50,9 +50,13 @@ If you use this code or these findings in your research, please cite:
 - [Usage](#usage)
   - [Running Experiments](#running-experiments)
     - [Example: Evaluating Qwen2.5 7B on GenImage (2k sample)](#example-evaluating-qwen25-7b-on-genimage-2k-sample)
+    - [Example: Evaluating Qwen2.5 32B on D3 dataset](#example-evaluating-qwen25-32b-on-d3-dataset)
     - [Example: Evaluating CoDE model on GenImage (2k sample)](#example-evaluating-code-model-on-genimage-2k-sample)
   - [Generating Result Tables and Plots](#generating-result-tables-and-plots)
-    - [Example: Generating the Scaling Consistency Plot](#example-generating-the-scaling-consistency-plot)
+    - [Example: Generating Bootstrap Confidence Interval Plots](#example-generating-bootstrap-confidence-interval-plots)
+    - [Example: Generating the Self-Consistency Scaling Analysis](#example-generating-the-self-consistency-scaling-analysis)
+    - [Example: Linguistic Analysis of Reasoning Patterns](#example-linguistic-analysis-of-reasoning-patterns)
+    - [Example: Generating the Self-Consistency Scaling Analysis](#example-generating-the-self-consistency-scaling-analysis)
   - [Downloading and Preprocessing D3 Dataset Images](#downloading-and-preprocessing-d3-dataset-images)
 - [Expected Outputs](#expected-outputs)
 - [Troubleshooting](#troubleshooting)
@@ -69,31 +73,51 @@ Zero-shot-s2/
 │   ├── df40/            # DF40 dataset CSVs and image subfolders
 │   └── genimage/        # GenImage dataset CSVs and image subfolders
 ├── experiments/         # Scripts for running evaluations and data processing
-│   ├── evaluate_AI_llama.py
-│   ├── evaluate_AI_qwen.py
-│   ├── evaluate_CoDE.py
-│   └── load_d3.py
+│   ├── evaluate_AI_llama.py # Llama VLM evaluation (functional design)
+│   ├── evaluate_AI_qwen.py  # Qwen VLM evaluation (functional design)
+│   ├── evaluate_CoDE.py     # CoDE model evaluation
+│   └── load_d3.py       # D3 dataset image downloader
 ├── outputs/             # Default location for generated results, plots, tables
 │   ├── responses/       # Raw model responses and rationales (JSONL)
 │   ├── scores/          # Evaluation scores (JSON, CSV)
 │   ├── plots/           # Generated plots (PNG, PDF)
 │   └── tables/          # Generated LaTeX tables (.tex)
 ├── results/             # Scripts for generating tables and plots from experiment outputs
-│   ├── combine_tables.py
-│   ├── distinct_words.py
-│   ├── find_images.py
-│   ├── macro_f1_bars.py
-│   ├── model_size_table.py
-│   ├── prompt_table.py
-│   ├── recall_subsets_table.py
-│   └── scaling_consistency.py
+│   ├── combine_tables.py      # Recall performance comparison tables
+│   ├── distinct_words.py      # Linguistic analysis with log-odds ratios
+│   ├── find_images.py         # Score pattern analysis across prompting methods
+│   ├── macro_f1_bars.py       # Bootstrap confidence interval bar plots
+│   ├── model_size_table.py    # Model scaling analysis tables
+│   ├── prompt_table.py        # Prompting strategy comparison tables
+│   ├── recall_subsets_table.py # Granular subset-level recall analysis
+│   └── scaling_consistency.py # Self-consistency scaling analysis
 ├── utils/               # Utility scripts and shared helper functions
-│   └── helpers.py       # Core helper functions for data loading, evaluation, etc.
+│   ├── helpers.py       # Core helper functions for data loading, evaluation, etc.
+│   └── results_utils.py # Shared utilities for results processing
 ├── .gitignore           # Specifies intentionally untracked files (e.g., large data files)
 ├── LICENSE.md           # Project license
 ├── README.md            # This file
 └── requirements.txt     # Python dependencies (for remaining packages after manual install of torch/flash-attn)
 ```
+
+### **Code Architecture & Documentation**
+
+This repository features a **clean, functional design** with comprehensive documentation:
+
+- **✅ All 15 Python scripts** have detailed module and function docstrings
+- **✅ Functional programming approach** - eliminated complex class hierarchies  
+- **✅ Shared utility functions** - DRY principles with `helpers.py` and `results_utils.py`
+- **✅ Consistent error handling** and logging throughout
+- **✅ Statistical rigor** - bootstrap confidence intervals, proper significance testing
+- **✅ Publication-ready outputs** - LaTeX tables, high-resolution plots
+
+### **Key Features**
+
+- **Zero-shot-s² Implementation**: Core task-aligned prompting via `helpers.get_model_guiding_prefix_for_mode()`
+- **Multi-Model Support**: Qwen2.5 (3B, 7B, 32B, 72B), Llama 3.2 (11B, 90B), CoDE 
+- **Statistical Analysis**: Bootstrap CIs, significance testing, scaling laws analysis
+- **Linguistic Analysis**: Log-odds ratios for reasoning pattern identification
+- **Academic Publishing**: Professional LaTeX tables and publication-ready visualizations
 
 ## Prerequisites
 
@@ -321,7 +345,7 @@ All scripts should be run from the root directory of the repository (`Zero-shot-
 
 ### Running Experiments
 
-The `experiments/` directory contains scripts to run evaluations on different models and datasets. These scripts use `utils/helpers.py` for argument parsing, data loading, and saving results, and `config.py` for path management.
+The `experiments/` directory contains scripts to run evaluations on different models and datasets. These scripts use a **clean functional design** with shared utilities in `helpers.py` for argument parsing, data loading, and result saving.
 
 **Example: Evaluating Qwen2.5 7B on the GenImage dataset (2k sample)**
 
@@ -335,11 +359,22 @@ python experiments/evaluate_AI_qwen.py \
     -m zeroshot-2-artifacts
 ```
 
+**Example: Evaluating Qwen2.5 32B on D3 dataset**
+
+```bash
+python experiments/evaluate_AI_qwen.py \
+    -llm qwen25-32b \
+    -c 0 \
+    -d d32k \
+    -b 10 \
+    -n 1 \
+    -m zeroshot-2-artifacts
+```
+
 **Example: Evaluating CoDE model on the GenImage dataset (2k sample)**
 
-The CoDE model is not a Vision-Language Model and has a different evaluation mechanism.
-It does not use prompting modes (`-m`) or number of sequences (`-n`) in the same way.
-The `-llm` argument is not used by `evaluate_CoDE.py` but might be parsed by the shared argument parser (it will use a default or fixed value internally).
+The CoDE model is a traditional computer vision approach and has a different evaluation mechanism.
+It does not use prompting modes (`-m`) or number of sequences (`-n`) in the same way as VLMs.
 
 ```bash
 python experiments/evaluate_CoDE.py \
@@ -348,33 +383,72 @@ python experiments/evaluate_CoDE.py \
     -b 50
 ```
 
+**Supported Models:**
+
+- **Qwen2.5 VLMs**: `qwen25-3b`, `qwen25-7b`, `qwen25-32b`, `qwen25-72b`
+- **Llama 3.2 VLMs**: `llama3-11b`, `llama3-90b` 
+- **Traditional CV**: `CoDE` (trained on D3)
+
 **Common Arguments for Evaluation Scripts:**
 
-  * `-llm` or `--llm`: Model identifier (e.g., `qwen25-7b`, `llama3-11b`). Refer to the `model_dict` (or `model_dict_qwen`) within the respective evaluation script for available models.
-  * `-c` or `--cuda`: CUDA device ID(s) (e.g., `0`, or `0,1` for multiple GPUs, though multi-GPU support depends on the script's implementation).
-  * `-d` or `--dataset`: Dataset identifier (e.g., `genimage`, `genimage2k`, `d3`, `d32k`, `df40`, `df402k`). These keys map to data loading routines and paths defined in `config.py` and `utils/helpers.py`.
+  * `-llm` or `--llm`: Model identifier. Refer to the model dictionaries within each evaluation script for available models.
+  * `-c` or `--cuda`: CUDA device ID(s) (e.g., `0`, or `0,1` for multiple GPUs).
+  * `-d` or `--dataset`: Dataset identifier (e.g., `genimage`, `genimage2k`, `d3`, `d32k`, `df40`, `df402k`).
   * `-b` or `--batch_size`: Batch size for model inference.
-  * `-n` or `--num`: Number of sequences to generate (e.g., for self-consistency). *(Note: Less relevant for `evaluate_CoDE.py`)*
-  * `-m` or `--mode`: Mode of reasoning or prompting strategy (e.g., `zeroshot`, `zeroshot-cot`, `zeroshot-2-artifacts`). *(Note: Less relevant for `evaluate_CoDE.py` which uses a default like "direct\_classification")*
+  * `-n` or `--num`: Number of sequences to generate for self-consistency evaluation.
+  * `-m` or `--mode`: Prompting strategy:
+    - `zeroshot`: Direct classification
+    - `zeroshot-cot`: Chain-of-thought reasoning  
+    - `zeroshot-2-artifacts`: **Zero-shot-s²** (our primary method)
 
-Refer to the `helpers.get_evaluation_args_parser()` function in `utils/helpers.py` and the `argparse` setup within each evaluation script for a complete list of options and their default values.
+Refer to the comprehensive docstrings in each script and `helpers.get_evaluation_args_parser()` for complete argument details.
 
 ### Generating Result Tables and Plots
 
-The `results/` directory contains scripts to process the outputs of experiments (stored in `outputs/responses/` and `outputs/scores/`) and generate tables (to `outputs/tables/`) and plots (to `outputs/plots/`).
+The `results/` directory contains **comprehensively documented scripts** to process experiment outputs and generate publication-ready tables and plots with **statistical rigor**. All scripts feature detailed docstrings explaining methodology, statistical approaches, and usage.
 
-Ensure that the experiment outputs are available in the locations specified by `config.py` before running these scripts.
+**Key Results Scripts:**
 
-**Example: Generating the Scaling Consistency Plot**
-(Assumes `TARGET_LLAMA_MODEL_NAME = "llama3-11b"` is set correctly in `results/scaling_consistency.py` or refactored to be configurable, and relevant rationale files from evaluations with varying `n` values are present in `outputs/responses/`)
+- **`macro_f1_bars.py`**: Bootstrap confidence interval bar plots for robust statistical comparison
+- **`scaling_consistency.py`**: Self-consistency scaling analysis with trend visualization  
+- **`distinct_words.py`**: Linguistic analysis using log-odds ratios to identify reasoning patterns
+- **`model_size_table.py`**: Model scaling analysis across parameter counts
+- **`prompt_table.py`**: Comprehensive prompting strategy comparison tables
+- **`recall_subsets_table.py`**: Granular subset-level performance analysis
+- **`combine_tables.py`**: Multi-model recall performance comparison
+
+**Example: Generating Bootstrap Confidence Interval Plots**
+
+```bash
+python results/macro_f1_bars.py
+```
+
+This generates publication-ready bar plots with 95% confidence intervals using 1000 bootstrap iterations, saved to `outputs/plots/`.
+
+**Example: Generating the Self-Consistency Scaling Analysis**
 
 ```bash
 python results/scaling_consistency.py
 ```
 
-This will generate a plot like `self_consistency_scaling.png` in the `outputs/plots/` directory (path configured by `config.PLOTS_DIR`).
+This creates scaling trend plots showing how performance improves with multiple reasoning samples.
 
-*(For other result scripts, you may need to check their internal configurations or provide command-line arguments if they support them. Future work could standardize argument parsing for result scripts.)*
+**Example: Linguistic Analysis of Reasoning Patterns**
+
+```bash
+python results/distinct_words.py
+```
+
+This performs log-odds ratio analysis to identify distinctive vocabulary across prompting methods.
+
+**Statistical Features:**
+- **Bootstrap confidence intervals** (1000 iterations) for robust uncertainty quantification
+- **Significance testing** with proper multiple comparison corrections
+- **Publication-ready formatting** with LaTeX tables and high-resolution plots
+- **Automatic caching** of computationally intensive bootstrap results
+- **Professional visualization** with colorblind-friendly palettes
+
+All results scripts include comprehensive error handling and detailed logging for reproducibility.
 
 ### Downloading and Preprocessing D3 Dataset Images
 
@@ -401,15 +475,27 @@ A log file (`load_d3_processing.log` by default, path configured by `config.LOAD
 ## Expected Outputs
 
   * **Experiment Scripts (`experiments/evaluate_AI_*.py`, `experiments/evaluate_CoDE.py`)**:
-      * Generate detailed rationale files (JSONL format) in the directory specified by `config.RESPONSES_DIR`.
-      * Generate score files (JSON for confusion matrix, CSV for Macro F1) in the directory specified by `config.SCORES_DIR`.
+      * **Rationale files** (JSONL format) in `config.RESPONSES_DIR` containing detailed model reasoning 
+      * **Score files** (JSON for confusion matrices, CSV for Macro F1 scores) in `config.SCORES_DIR`
+      * **Comprehensive logging** with detailed progress tracking and error reporting
+      
   * **Result Scripts (`results/*.py`)**:
-      * Generate `.png` plot files in `config.PLOTS_DIR`.
-      * Generate `.tex` LaTeX table files in `config.TABLES_DIR`.
-      * Some scripts might print tables or summaries to the console.
+      * **High-resolution plots** (.png) in `config.PLOTS_DIR` with publication-ready formatting
+      * **Professional LaTeX tables** (.tex) in `config.TABLES_DIR` with proper academic styling
+      * **Bootstrap analysis results** with cached confidence intervals for efficient re-analysis
+      * **Statistical summaries** printed to console with detailed methodology explanations
+      * **Linguistic analysis outputs** including word clouds and distinctiveness metrics
+      
   * **Data Loading Scripts (`experiments/load_d3.py`)**:
-      * Download images to the specified save directory (e.g., `data/d3/`).
-      * Produce a log file detailing the download process.
+      * **Downloaded images** organized in the specified save directory (e.g., `data/d3/`)
+      * **Detailed processing logs** documenting download success/failure rates
+      
+  * **Enhanced Features**:
+      * **Bootstrap confidence intervals** (95% CI, 1000 iterations) for statistical robustness
+      * **Publication-ready visualizations** with colorblind-friendly palettes
+      * **Comprehensive documentation** with detailed docstrings explaining methodology
+      * **Automatic error handling** with informative error messages and recovery suggestions
+      * **Performance caching** for computationally intensive statistical analyses
 
 ## Troubleshooting
 

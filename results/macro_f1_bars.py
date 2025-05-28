@@ -1,3 +1,95 @@
+"""
+Macro F1-Score Bar Plot Generator with Bootstrap Confidence Intervals
+
+This script generates publication-ready bar plots comparing macro F1-scores across
+different AI-generated image detection models, datasets, and prompting methods.
+It includes bootstrap confidence intervals for statistical rigor and supports
+both Vision-Language Models (VLMs) and traditional computer vision approaches.
+
+The script is designed for academic publications and provides statistically
+robust comparisons with proper error bars, significance annotations, and
+professional formatting suitable for research papers.
+
+Features:
+- Bootstrap confidence interval calculation for statistical robustness
+- Multi-model comparison (Qwen, Llama, CoDE) across datasets
+- Method performance comparison with statistical significance testing
+- Professional publication-ready formatting with LaTeX math notation
+- Colorblind-friendly visualization with consistent color schemes
+- Automatic caching of bootstrap results for efficient re-analysis
+- Configurable confidence levels and bootstrap iterations
+
+Statistical Analysis:
+- Bootstrap resampling (default: 1000 iterations) for CI estimation
+- Confidence intervals computed at 95% level (configurable)
+- Original F1-scores calculated from rationale-level predictions
+- Error bars showing confidence interval bounds
+- Statistical significance annotations for method comparisons
+
+Visualization Design:
+- Bar plots with grouped comparisons by model/method
+- Custom positioning for clear visual separation
+- Method-specific color coding for consistency across figures
+- Error bars with appropriate cap sizes
+- Grid lines for easier value reading
+- Professional typography with configurable font sizes
+
+Supported Models:
+- Qwen2.5 7B: Vision-language model for image analysis
+- Llama 3.2 11B: Vision-language model with reasoning capabilities  
+- CoDE: Traditional computer vision model trained on D3 dataset
+
+Supported Datasets:
+- D3: Diverse dataset with real and AI-generated images
+- DF40: DiffusionForensics dataset focusing on diffusion models
+- GenImage: Multi-generator synthetic image benchmark
+
+Bootstrap Methodology:
+- Sample with replacement from original predictions
+- Recalculate macro F1-score for each bootstrap sample
+- Compute percentile-based confidence intervals
+- Cache results to avoid redundant computation
+- Handle edge cases with insufficient data
+
+Output Formats:
+- High-resolution PNG files for publications
+- PDF format available (configurable)
+- Separate plots for each dataset
+- Combined multi-panel figures
+
+Performance Metrics:
+- Macro F1-score: Average of F1-scores for 'real' and 'ai-generated' classes
+- Handles class imbalance through macro averaging
+- Bootstrap CIs provide uncertainty quantification
+- Percentage differences annotated for method comparisons
+
+Usage:
+    python results/macro_f1_bars.py
+    
+Output Files:
+    - Bar plots saved to RESULTS_OUTPUT_DIR
+    - Bootstrap cache files for efficient re-runs
+    - Statistical analysis logs
+
+Configuration:
+    Edit constants at top of script to adjust:
+    - Bootstrap parameters (iterations, confidence level)
+    - Visualization settings (colors, fonts, sizes)
+    - Model and dataset selection
+    - Statistical significance thresholds
+
+Dependencies:
+    - matplotlib for plotting
+    - numpy for statistical calculations
+    - pandas for data manipulation
+    - tqdm for progress tracking during bootstrap
+
+Note:
+    Bootstrap analysis can be computationally intensive for large datasets.
+    Results are cached to enable quick re-plotting with different visual
+    parameters without re-running the statistical analysis.
+"""
+
 import sys
 from pathlib import Path
 import logging # For logging

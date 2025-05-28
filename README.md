@@ -11,7 +11,7 @@ While off-the-shelf VLMs exhibit some task-specific reasoning capabilities, and 
 The central method introduced in our work is `zero-shot-s²` (zero-shot style and synthesis).
 
 > [!IMPORTANT]
-> * **To apply our primary method for detecting AI-generated images:** This involves programmatically inserting the phrase **“Let’s examine the style and the synthesis artifacts”** as a prefix into the VLM's *assistant* response field, guiding its generation process. This is the core of the `zero-shot-s²` technique. (The prompting logic, including this insertion, is managed by the `get_model_guiding_prefix_for_mode` function within `utils/helpers.py` in our experimental scripts). If your goal is to quickly leverage this core technique with a compatible open-source VLM, this is the main takeaway.
+> * **To apply our primary method for detecting AI-generated images:** This involves programmatically inserting the phrase **"Let's examine the style and the synthesis artifacts"** as a prefix into the VLM's *assistant* response field, guiding its generation process. This is the core of the `zero-shot-s²` technique. (The prompting logic, including this insertion, is managed by the `get_model_guiding_prefix_for_mode` function within `utils/helpers.py` in our experimental scripts). If your goal is to quickly leverage this core technique with a compatible open-source VLM, this is the main takeaway.
 >
 > * **To reproduce the full experimental results from our paper or to build extensively upon this work:** You will need to follow the detailed setup, data preparation (including downloading and organizing datasets), and experimental procedures outlined in the subsequent sections of this README.
 
@@ -44,10 +44,8 @@ If you use this code or these findings in your research, please cite:
 - [Repository Structure](#repository-structure)
 - [Prerequisites](#prerequisites)
 - [Setup](#setup)
-  - [1. Clone the Repository](#1-clone-the-repository)
-  - [2. Create a Virtual Environment](#2-create-a-virtual-environment)
-  - [3. Install Dependencies](#3-install-dependencies)
-  - [4. Data Preparation](#4-data-preparation)
+  - [Quick Setup (Recommended)](#quick-setup-recommended)
+  - [Manual Setup (Alternative)](#manual-setup-alternative)
 - [Configuration](#configuration)
 - [Usage](#usage)
   - [Running Experiments](#running-experiments)
@@ -65,6 +63,7 @@ If you use this code or these findings in your research, please cite:
 ```
 Zero-shot-s2/
 ├── config.py            # Central configuration for paths and global parameters
+├── setup_environment.sh # Automated environment setup script
 ├── data/                # Placeholder for input datasets (managed via .gitignore)
 │   ├── d3/              # D3 dataset images and metadata CSV
 │   ├── df40/            # DF40 dataset CSVs and image subfolders
@@ -105,14 +104,56 @@ Zero-shot-s2/
 
 ## Setup
 
-### 1. Clone the Repository
+### Quick Setup (Recommended)
+
+We provide an automated setup script that handles the entire environment setup process:
+
+```bash
+git clone https://github.com/Zoher15/Zero-shot-s2.git
+cd Zero-shot-s2
+./setup_environment.sh
+```
+
+The script will:
+1. Create a virtual environment (conda preferred, falls back to venv)
+2. Create all required directory structures
+3. Install PyTorch with CUDA 12.6 support
+4. Install flash-attn (takes 10-15+ minutes to compile)
+5. Install all remaining dependencies from requirements.txt
+6. Download required NLTK data
+7. Verify the installation
+
+**Usage:**
+- `./setup_environment.sh` - Full automated setup
+- `./setup_environment.sh -h` - Show help and options
+- `./setup_environment.sh --verify-only` - Verify existing installation
+
+**Note:** If no virtual environment is detected, the script will create one and exit. You'll need to activate the environment and re-run the script:
+```bash
+# For conda (recommended)
+conda activate zeroshot_s2
+./setup_environment.sh
+
+# For venv
+source venv/bin/activate
+./setup_environment.sh
+```
+
+### Manual Setup (Alternative)
+
+If you prefer to set up the environment manually or need to customize the installation:
+
+<details>
+<summary>Click to expand manual setup instructions</summary>
+
+#### 1. Clone the Repository
 
 ```bash
 git clone https://github.com/Zoher15/Zero-shot-s2.git
 cd Zero-shot-s2
 ```
 
-### 2. Create a Virtual Environment
+#### 2. Create a Virtual Environment
 
 It is highly recommended to use a virtual environment to manage dependencies.
 
@@ -129,7 +170,7 @@ python -m venv venv
 source venv/bin/activate  # On Windows use: venv\Scripts\activate
 ```
 
-### 3. Install Dependencies
+#### 3. Install Dependencies
 
 Due to the specific requirements of PyTorch with CUDA and `flash-attn`, dependencies must be installed in a particular order:
 
@@ -160,9 +201,23 @@ The rest of the dependencies are listed in `requirements.txt`. Install them usin
 pip install -r requirements.txt --no-cache-dir
 ```
 
+**e. Create Directory Structure:**
+```bash
+mkdir -p data/{d3,df40,genimage}
+mkdir -p outputs/{responses,scores,plots,tables}
+mkdir -p cache logs
+```
+
+**f. Download NLTK Data:**
+```bash
+python -c "import nltk; nltk.download('wordnet'); nltk.download('stopwords'); nltk.download('punkt')"
+```
+
 *(Note: Some scripts, e.g., in `results/`, may require NLTK resources like WordNet, stopwords, and punkt. Utilities within the project, such as `utils/helpers.py` or specific scripts like `results/distinct_words.py`, attempt to download these automatically if they are missing. See Troubleshooting for NLTK `LookupError` if issues arise.)*
 
-### 4. Data Preparation
+</details>
+
+### Data Preparation
 
 This project requires several datasets. Due to their size, they are not included directly in the repository. You need to download them and organize them according to the structure defined in `config.py`. By default, scripts expect datasets to be in the `Zero-shot-s2/data/` directory.
 
@@ -358,21 +413,34 @@ A log file (`load_d3_processing.log` by default, path configured by `config.LOAD
 
 ## Troubleshooting
 
+  * **Environment Setup Issues**:
+      * Try using the automated setup script: `./setup_environment.sh`
+      * To verify an existing installation: `./setup_environment.sh --verify-only`
+      * For help with the setup script: `./setup_environment.sh -h`
   * **`FileNotFoundError`**:
       * Ensure that all required dataset files (CSVs, image directories) are correctly placed as per the "Data Preparation" section and that paths in `config.py` point to them correctly. Pay attention to directory and file casing, especially on case-sensitive systems like Linux.
       * Verify that output directories specified in `config.py` are writable.
+      * The setup script automatically creates required directories; run `./setup_environment.sh` if directories are missing.
   * **`ModuleNotFoundError`**:
       * Make sure your virtual environment is activated.
+      * Try running the setup script: `./setup_environment.sh` (it will verify the environment and install missing dependencies).
       * Verify that all dependencies from `requirements.txt` have been installed correctly (`pip install -r requirements.txt`).
       * Ensure you are running scripts from the project's root directory (`Zero-shot-s2/`).
   * **CUDA Errors / GPU Issues**:
+      * Run `./setup_environment.sh --verify-only` to check your CUDA and PyTorch installation.
       * Ensure PyTorch is installed with the correct CUDA version matching your system's CUDA drivers and GPU architecture.
       * Check if the correct GPU is visible and selected (e.g., via the `-c` argument in evaluation scripts or `CUDA_VISIBLE_DEVICES` environment variable).
   * **NLTK `LookupError`**:
-      * Ensure NLTK resources (like WordNet, stopwords, punkt) are downloaded. Some scripts (e.g., `results/distinct_words.py`) or utilities (e.g., in `utils/helpers.py`) attempt to download these automatically upon first run if missing. If issues persist, you can try manually downloading them:
+      * The setup script automatically downloads NLTK data. If you encounter issues, re-run: `./setup_environment.sh`
+      * Alternatively, manually download NLTK resources:
         ```bash
-        python -m nltk.downloader wordnet stopwords punkt
+        python -c "import nltk; nltk.download('wordnet'); nltk.download('stopwords'); nltk.download('punkt')"
         ```
+  * **flash-attn Installation Issues**:
+      * The setup script handles flash-attn compilation automatically. If you encounter issues:
+        * Ensure you have sufficient disk space and memory for compilation
+        * Try running the setup script again: `./setup_environment.sh`
+        * For manual installation, refer to the manual setup instructions in the collapsed section above
   * **Incorrect File Paths in Scripts**:
       * This should be minimal if `config.py` is used correctly. If you suspect a path issue within a script, verify it's using a variable from `config.py` rather than a hardcoded path.
 

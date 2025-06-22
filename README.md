@@ -1,21 +1,4 @@
-# `Zero-shot-s²`: Task-aligned prompting improves zero-shot detection of AI-generated images by Vision-Language Models
-
-## Citation
-
-If you use this code or these findings in your research, please cite:
-
-```bibtex
-@misc{kachwala2025taskalignedpromptingimproveszeroshot,
-      title={Task-aligned prompting improves zero-shot detection of AI-generated images by Vision-Language Models}, 
-      author={Zoher Kachwala and Danishjeet Singh and Danielle Yang and Filippo Menczer},
-      year={2025},
-      eprint={2506.11031},
-      archivePrefix={arXiv},
-      primaryClass={cs.LG},
-      url={https://arxiv.org/abs/2506.11031}, 
-}
-```
-
+# `Zero-shot-s²`: [Task-aligned prompting improves zero-shot detection of AI-generated images by Vision-Language Models](https://arxiv.org/abs/2506.11031)
 ## Overview
 
 As image generators produce increasingly realistic images, concerns about potential misuse continue to grow. Traditional supervised detection methods rely on large, curated datasets and can struggle to generalize across diverse image generators. This repository accompanies the paper investigating the use of pre-trained Vision-Language Models (VLMs) for the zero-shot detection of AI-generated images.
@@ -41,6 +24,22 @@ Our study shows that the `zero-shot-s²` approach boosts Macro F1 scores by 8%�
 We further evaluate the approach across three additional model sizes and observe improvements in most dataset–model combinations—suggesting robustness to model scale. Surprisingly, self-consistency, a behavior previously observed in language reasoning where aggregating answers from diverse reasoning paths improves performance, also holds in this visual reasoning setting. Even here, `zero-shot-s²` scales better with self-consistency than chain-of-thought in most cases—indicating that it elicits more useful diversity.
 
 Our findings show that task-aligned prompts elicit more focused reasoning and enhance latent capabilities in VLMs, like the detection of AI-generated images—offering a simple, generalizable, and explainable alternative to supervised methods. This repository provides the code and experimental results to support these findings.
+
+## Citation
+
+If you use this code or these findings in your research, please cite:
+
+```bibtex
+@misc{kachwala2025taskalignedpromptingimproveszeroshot,
+      title={Task-aligned prompting improves zero-shot detection of AI-generated images by Vision-Language Models}, 
+      author={Zoher Kachwala and Danishjeet Singh and Danielle Yang and Filippo Menczer},
+      year={2025},
+      eprint={2506.11031},
+      archivePrefix={arXiv},
+      primaryClass={cs.LG},
+      url={https://arxiv.org/abs/2506.11031}, 
+}
+```
 
 ## Table of Contents
 

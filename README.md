@@ -102,14 +102,6 @@ Zero-shot-s2/
 └── requirements.txt     # Python dependencies (for remaining packages after manual install of torch/flash-attn)
 ```
 
-### **Key Features**
-
-- **Zero-shot-s² Implementation**: Core task-aligned prompting via `helpers.get_model_guiding_prefix_for_mode()`
-- **Multi-Model Support**: Qwen2.5 (3B, 7B, 32B, 72B), Llama 3.2 (11B, 90B), CoDE 
-- **Statistical Analysis**: Bootstrap CIs, significance testing, scaling laws analysis
-- **Linguistic Analysis**: Log-odds ratios for reasoning pattern identification
-- **Academic Publishing**: Professional LaTeX tables and publication-ready visualizations
-
 ## Prerequisites
 
 * Python (e.g., 3.10+ recommended)

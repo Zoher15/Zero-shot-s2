@@ -102,17 +102,6 @@ Zero-shot-s2/
 └── requirements.txt     # Python dependencies (for remaining packages after manual install of torch/flash-attn)
 ```
 
-### **Code Architecture & Documentation**
-
-This repository features a **clean, functional design** with comprehensive documentation:
-
-- **✅ All 15 Python scripts** have detailed module and function docstrings
-- **✅ Functional programming approach** - eliminated complex class hierarchies  
-- **✅ Shared utility functions** - DRY principles with `helpers.py` and `results_utils.py`
-- **✅ Consistent error handling** and logging throughout
-- **✅ Statistical rigor** - bootstrap confidence intervals, proper significance testing
-- **✅ Publication-ready outputs** - LaTeX tables, high-resolution plots
-
 ### **Key Features**
 
 - **Zero-shot-s² Implementation**: Core task-aligned prompting via `helpers.get_model_guiding_prefix_for_mode()`

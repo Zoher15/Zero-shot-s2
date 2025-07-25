@@ -385,7 +385,7 @@ def main():
             config_module=config
         )
         
-        logger.info(f"Evaluation completed successfully!")
+        logger.info(f"Evaluation completed successfully!!")
         logger.info(f"Model: {args.llm}")
         logger.info(f"Dataset: {args.dataset}")
         logger.info(f"Mode: {args.mode}")

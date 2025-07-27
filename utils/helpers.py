@@ -19,9 +19,7 @@ The module is organized into the following functional areas:
 - calculate_macro_f1_score_from_answers(): F1-score calculation from answer lists
 
 ## Data Loading Functions
-- load_genimage_data_examples(): Load GenImage dataset samples
-- load_d3_data_examples(): Load D3 dataset samples  
-- load_df40_data_examples(): Load DF40 dataset samples
+- load_dataset_examples(): Unified function to load dataset samples from GenImage, D3, or DF40
 - load_dataset_csv_mapping(): Generic CSV-based dataset mapping loader
 - load_rationales_from_file(): Load evaluation rationales from JSON/JSONL files
 
@@ -57,7 +55,7 @@ Usage:
     helpers.setup_global_logger("experiment.log")
     
     # Load dataset
-    examples = helpers.load_genimage_data_examples(csv_path, img_dir, question)
+    examples = helpers.load_dataset_examples('genimage', question, csv_path, img_dir)
     
     # Process evaluation results
     f1_score = helpers.get_macro_f1_from_counts(confusion_matrix)
@@ -85,13 +83,18 @@ from tqdm import tqdm
 # --- Standard Logger for this Module ---
 logger = logging.getLogger(__name__)
 
+class CudaOOMError(Exception):
+    """Custom exception for CUDA out of memory errors"""
+    pass
+
 def setup_global_logger(
     log_file_path_str: Union[str, Path],
     file_log_level: int = logging.INFO,
     console_log_level: int = logging.INFO,
     file_log_format: str = '%(asctime)s - %(levelname)s - %(name)s - %(module)s.%(funcName)s:%(lineno)d - %(message)s',
     console_log_format: str = '%(asctime)s - %(levelname)s - %(name)s - %(message)s',
-    file_log_mode: str = 'a'
+    file_log_mode: str = 'a',
+    capture_stdout: bool = True
 ) -> None:
     """
     Sets up a global logger that logs to a specified file and the console.
@@ -184,6 +187,153 @@ def initialize_environment(cuda_devices_str: str, seed_value: int = 0):
     logger.info(f"CUDA_VISIBLE_DEVICES set to '{cuda_devices_str}'")
     logger.info(f"Seeds set to {seed_value}")
 
+def load_file_safe(file_path: Union[str, Path], description: str = "file", is_jsonl: bool = False) -> Union[Dict[str, Any], List[Dict[str, Any]]]:
+    """Safely load a JSON or JSONL file with proper error handling and validation."""
+    path = Path(file_path)
+    if not path.exists():
+        raise FileNotFoundError(f"{description} not found: {file_path}")
+    if not path.is_file():
+        raise ValueError(f"Path exists but is not a file: {file_path}")
+    
+    try:
+        with open(path, 'r', encoding='utf-8') as f:
+            if is_jsonl:
+                data = []
+                for line_num, line in enumerate(f, 1):
+                    if line.strip():  # Skip empty lines
+                        try:
+                            item = json.loads(line)
+                            if not isinstance(item, dict):
+                                logger.warning(f"Line {line_num} in {path} is not a JSON object, skipping")
+                                continue
+                            data.append(item)
+                        except json.JSONDecodeError as e:
+                            logger.warning(f"Invalid JSON on line {line_num} in {path}: {e}, skipping")
+                            continue
+                
+                if not data:
+                    raise ValueError(f"No valid data found in {description}: {path}")
+            else:
+                data = json.load(f)
+                if not isinstance(data, dict):
+                    raise ValueError(f"{description} must contain a JSON object, got {type(data)}")
+        
+        logger.info(f"Loaded {description}: {path} ({len(data)} entries)")
+        return data
+        
+    except json.JSONDecodeError as e:
+        logger.error(f"Invalid JSON in {description} {path}: {e}")
+        raise
+    except Exception as e:
+        logger.error(f"Error loading {description} from {path}: {e}")
+        raise
+
+def load_model_and_tokenizer(model_name, device_map="auto", use_cache=True):
+    """
+    Load a model and tokenizer for text generation tasks with support for multiple model types.
+    
+    This function handles loading of different model types including:
+    - Standard AutoModelForCausalLM models (Qwen2.5, etc.)
+    - Qwen vision-language models (Qwen2.5-VL series)
+    - Llama vision-language models (Llama 3.2 Vision series)
+    - Other HuggingFace models via direct path loading
+    
+    Args:
+        model_name: Name or path of the model to load (e.g., "qwen25-7b", "llama3-11b")
+        device_map: Device mapping strategy for model loading (default: "auto")
+        use_cache: Whether to enable KV cache (default: True for eval, set False for training)
+        
+    Returns:
+        tuple: (model, processor, tokenizer) where:
+            - model: The loaded model ready for inference
+            - processor: AutoProcessor for vision-language models, None for text models
+            - tokenizer: AutoTokenizer for text models, None for vision-language models
+        
+    Raises:
+        ValueError: If model_name is not supported or loading fails
+        
+    Supported Models:
+        - Qwen2.5-VL: qwen25-3b, qwen25-7b, qwen25-32b, qwen25-72b
+        - Llama: llama3-11b, llama3-90b
+        - CoDE: code (handled by evaluation scripts)
+        - Other: Any valid HuggingFace model path
+        
+    Note:
+        - Uses bfloat16 precision for memory efficiency
+        - Enables flash attention 2 for supported models
+        - Configures tokenizer with proper padding settings
+        - Sets model to evaluation mode
+    """
+    # Import transformers here to avoid module-level import before CUDA setup
+    from transformers import AutoTokenizer, AutoModelForCausalLM, AutoProcessor
+    import torch
+    
+    logger.info(f"Loading model: {model_name}")
+    
+    processor = None
+    tokenizer = None
+    
+    # Check if model_name is a path (checkpoint) vs a predefined model name
+    is_checkpoint_path = "/" in model_name or Path(model_name).exists()
+
+    # Qwen2.5-VL models (Zero-shot-s2 naming)
+    if not is_checkpoint_path and "qwen25" in model_name.lower():
+        from transformers import Qwen2_5_VLForConditionalGeneration
+        model_dict = {
+            "qwen25-3b": "Qwen/Qwen2.5-VL-3B-Instruct", 
+            "qwen25-7b": "Qwen/Qwen2.5-VL-7B-Instruct", 
+            "qwen25-32b": "Qwen/Qwen2.5-VL-32B-Instruct", 
+            "qwen25-72b": "Qwen/Qwen2.5-VL-72B-Instruct"
+        }
+        if model_name not in model_dict:
+            raise ValueError(f"Unsupported Qwen2.5-VL model: {model_name}. Supported: {list(model_dict.keys())}")
+        
+        model = Qwen2_5_VLForConditionalGeneration.from_pretrained(
+            model_dict[model_name], torch_dtype=torch.bfloat16, device_map=device_map, 
+            attn_implementation="flash_attention_2", use_cache=use_cache
+        )
+        processor = AutoProcessor.from_pretrained(model_dict[model_name])
+        tokenizer = processor.tokenizer  # Use processor's tokenizer for configuration
+    
+    # Llama Vision models
+    elif not is_checkpoint_path and "llama3" in model_name.lower():
+        from transformers import MllamaForConditionalGeneration
+        model_dict = {
+            "llama3-11b": "meta-llama/Llama-3.2-11B-Vision-Instruct",
+            "llama3-90b": "meta-llama/Llama-3.2-90B-Vision-Instruct",
+        }
+        if model_name not in model_dict:
+            raise ValueError(f"Unsupported Llama model: {model_name}. Supported: {list(model_dict.keys())}")
+        
+        model = MllamaForConditionalGeneration.from_pretrained(
+            model_dict[model_name], torch_dtype=torch.bfloat16, device_map=device_map
+        )
+        processor = AutoProcessor.from_pretrained(model_dict[model_name])
+        processor.tokenizer.padding_side = "left"
+        if processor.tokenizer.pad_token is None and processor.tokenizer.eos_token is not None:
+            processor.tokenizer.pad_token = processor.tokenizer.eos_token
+        
+    else:
+        # For other models, try to load directly (assumes model_name is a valid HuggingFace model path)
+        try:
+            model = AutoModelForCausalLM.from_pretrained(
+                model_name, torch_dtype=torch.bfloat16, device_map=device_map, 
+                attn_implementation="flash_attention_2", use_cache=use_cache
+            )
+            tokenizer = AutoTokenizer.from_pretrained(model_name)
+        except Exception as e:
+            raise ValueError(f"Failed to load model '{model_name}': {e}")
+    
+    # Configure tokenizer for proper generation (unified for all model types)
+    if tokenizer and tokenizer.pad_token is None:
+        tokenizer.pad_token = tokenizer.eos_token
+    if tokenizer:
+        tokenizer.padding_side = "left"  # Important for causal LM generation
+    
+    model.eval()
+    logger.info(f"Model loaded successfully: {model_name}")
+    return model, processor, tokenizer
+
 def validate_answers(
     example: Dict[str, Any],
     full_responses: List[str],
@@ -275,71 +425,62 @@ def save_evaluation_outputs(
     rationales_data: list,
     score_metrics: dict,
     macro_f1_score: float,
-    model_prefix: str,
     dataset_name: str,
     model_string: str,
     mode_type_str: str,
     num_sequences_val: int,
-    config_module: Any # Should be the imported config module
+    config_module: Any, # Should be the imported config module
+    skipped_data: list = None
 ):
     """
     Save evaluation results in standardized formats across the Zero-shot-s² project.
     
-    Generates three output files for each evaluation run:
+    Generates up to four output files for each evaluation run:
     1. Rationales file (JSONL): Detailed responses and predictions
     2. Scores file (JSON): Confusion matrix and detailed metrics  
     3. Scores file (CSV): Macro F1-score for easy aggregation
+    4. Skipped file (JSON): Examples that failed processing (if any)
     
     Args:
         rationales_data: List of dictionaries containing detailed evaluation results.
-                        Each dict should have keys: 'question', 'prompt', 'image', 
-                        'rationales', 'ground_answer', 'pred_answers', 'pred_answer', 'cur_score'
         score_metrics: Dictionary with confusion matrix counts ('TP', 'FP', 'TN', 'FN')
         macro_f1_score: Final macro F1-score (0-1 range)
-        model_prefix: Model family prefix (e.g., "AI_llama", "AI_qwen", "AI_CoDE")
         dataset_name: Dataset identifier (e.g., "genimage2k", "df402k", "d32k")
         model_string: Specific model name (e.g., "llama3-11b", "qwen25-7b")
         mode_type_str: Prompting mode (e.g., "zeroshot", "zeroshot-cot", "zeroshot-2-artifacts")
         num_sequences_val: Number of response sequences for self-consistency
-        config_module: Imported config module providing RESPONSES_DIR and SCORES_DIR
-        
-    Output Files Generated:
-        - {model_prefix}-{dataset_name}-{model_string}-{mode_type_str}-n{num_sequences_val}-rationales.jsonl
-        - {model_prefix}-{dataset_name}-{model_string}-{mode_type_str}-n{num_sequences_val}-scores.json
-        - {model_prefix}-{dataset_name}-{model_string}-{mode_type_str}-n{num_sequences_val}-scores.csv
-        
-    File Contents:
-        - Rationales JSONL: Complete evaluation data for detailed analysis
-        - Scores JSON: Confusion matrix and metrics for error analysis
-        - Scores CSV: Single macro F1-score value for results aggregation
+        config_module: Imported config module with enhanced directory functions
+        skipped_data: List of examples that failed processing (optional)
         
     Error Handling:
         Function handles directory creation failures and file I/O errors gracefully,
         logging errors while continuing to attempt saving other files.
     """
-    # Ensure directories exist
+    # Use enhanced directory management
     try:
-        config_module.RESPONSES_DIR.mkdir(parents=True, exist_ok=True)
-        config_module.SCORES_DIR.mkdir(parents=True, exist_ok=True)
+        responses_dir = config_module.get_model_output_dir(model_string, 'responses', mode_type_str, dataset_name)
+        scores_dir = config_module.get_model_output_dir(model_string, 'scores', mode_type_str, dataset_name)
+        
+        responses_dir.mkdir(parents=True, exist_ok=True)
+        scores_dir.mkdir(parents=True, exist_ok=True)
     except Exception as e:
         logger.error(f"Could not create output directories: {e}", exc_info=True)
         return # Cannot proceed if directories can't be made
 
-    base_filename_part = f"{model_prefix}-{dataset_name}-{model_string}-{mode_type_str}-n{num_sequences_val}"
-
-    rationales_filename = f"{base_filename_part}-rationales.jsonl"
-    rationales_file_path = config_module.RESPONSES_DIR / rationales_filename
+    # Use enhanced filename generation
+    rationales_filename = config_module.get_filename("responses", dataset_name, model_string, mode_type_str, num_sequences_val)
+    rationales_file_path = responses_dir / rationales_filename
     try:
-        with open(rationales_file_path, 'w', encoding='utf-8') as file: # Added encoding
+        with open(rationales_file_path, 'w', encoding='utf-8') as file:
             json.dump(rationales_data, file, indent=4)
         logger.info(f"Rationales data saved to {rationales_file_path}")
     except IOError as e:
         logger.error(f"Could not save rationales to {rationales_file_path}: {e}", exc_info=True)
 
-    scores_filename_json = f"{base_filename_part}-scores.json"
-    scores_file_path_json = config_module.SCORES_DIR / scores_filename_json
+    scores_filename_json = config_module.get_filename("scores", dataset_name, model_string, mode_type_str, num_sequences_val)
+    scores_file_path_json = scores_dir / scores_filename_json
     try:
-        with open(scores_file_path_json, 'w', encoding='utf-8') as file: # Added encoding
+        with open(scores_file_path_json, 'w', encoding='utf-8') as file:
             json.dump(score_metrics, file, indent=4)
         logger.info(f"Confusion matrix data (JSON) saved to {scores_file_path_json}")
     except IOError as e:
@@ -348,42 +489,24 @@ def save_evaluation_outputs(
     csv_scores_dict = {f'{mode_type_str}-n{num_sequences_val}': macro_f1_score}
     scores_df = pd.DataFrame.from_dict(csv_scores_dict, orient='index', columns=['macro_f1'])
 
-    csv_scores_filename = f'{base_filename_part}-scores.csv'
-    csv_file_path = config_module.SCORES_DIR / csv_scores_filename
+    csv_scores_filename = config_module.get_filename("scores_csv", dataset_name, model_string, mode_type_str, num_sequences_val)
+    csv_file_path = scores_dir / csv_scores_filename
     try:
         scores_df.to_csv(csv_file_path, index=True, header=True)
         logger.info(f"Macro F1 score CSV saved to {csv_file_path}")
     except IOError as e:
         logger.error(f"Could not save Macro F1 CSV to {csv_file_path}: {e}", exc_info=True)
 
-def get_model_guiding_prefix_for_mode(prompt_text: str, mode_type: str) -> str:
-    prefixes = {
-        "zeroshot-cot": "Let's think step by step",
-        "zeroshot-visualize": "Let's visualize",
-        "zeroshot-examine": "Let's examine",
-        "zeroshot-pixel": "Let's examine pixel by pixel",
-        "zeroshot-zoom": "Let's zoom in",
-        "zeroshot-flaws": "Let's examine the flaws",
-        "zeroshot-texture": "Let's examine the textures",
-        "zeroshot-style": "Let's examine the style",
-        "zeroshot-artifacts": "Let's examine the synthesis artifacts",
-        "zeroshot-2-artifacts": "Let's examine the style and the synthesis artifacts",
-        "zeroshot-3-artifacts": "Let's examine the synthesis artifacts and the style",
-        "zeroshot-4-artifacts": "Let's observe the style and the synthesis artifacts",
-        "zeroshot-5-artifacts": "Let's inspect the style and the synthesis artifacts",
-        "zeroshot-6-artifacts": "Let's survey the style and the synthesis artifacts",
-        "zeroshot-7-artifacts": "Let's scrutinize the style and the synthesis artifacts",
-        "zeroshot-8-artifacts": "Let's analyze the style and the synthesis artifacts",
-        "zeroshot-9-artifacts": "Let's examine the details and the textures",
-    }
-    prefix_to_add = ""
-    for key_prefix, text_prefix in prefixes.items():
-        if key_prefix in mode_type:
-            prefix_to_add = text_prefix
-            break
-    if prefix_to_add: # Ensure space only if prefix is added
-        return f"{prompt_text}{prefix_to_add}" # rstrip to avoid double spaces if prompt_text ends with one
-    return prompt_text
+    # Save skipped data if provided
+    if skipped_data:
+        skipped_filename = config_module.get_filename("skipped", dataset_name, model_string, mode_type_str, num_sequences_val)
+        skipped_file_path = scores_dir / skipped_filename
+        try:
+            with open(skipped_file_path, 'w', encoding='utf-8') as file:
+                json.dump(skipped_data, file, indent=4)
+            logger.info(f"Skipped data saved to {skipped_file_path}")
+        except IOError as e:
+            logger.error(f"Could not save skipped data to {skipped_file_path}: {e}", exc_info=True)
 
 def get_instructions_for_mode(mode_type: str) -> str:
     """
@@ -399,49 +522,99 @@ def get_instructions_for_mode(mode_type: str) -> str:
     
     return instructions_map.get(mode_type, "")
 
-def load_genimage_data_examples(csv_file_path_str: Union[str, Path], image_base_dir_str: Union[str, Path], question_str: str) -> List[Dict[str, Any]]:
-    csv_file_path = Path(csv_file_path_str)
-    image_base_dir = Path(image_base_dir_str) # Use the provided image base directory
-    data = pd.read_csv(csv_file_path)
+def load_dataset_examples(dataset_arg_val: str, question_str: str, config_module: Any) -> List[Dict[str, Any]]:
+    """
+    Enhanced test data loading with better validation and error handling.
+    
+    This is a merged version that combines load_dataset_examples and load_test_data
+    for better DRY compliance.
+    
+    Args:
+        dataset_arg_val: Dataset identifier (e.g., 'genimage2k', 'd32k', 'df402k')
+        question_str: Question text to include in examples
+        config_module: Configuration module containing dataset paths
+        
+    Returns:
+        List of example dictionaries with 'image', 'question', 'answer' keys
+        
+    Raises:
+        ValueError: If dataset is not supported or no data found
+        FileNotFoundError: If dataset files don't exist
+    """
+    # Validate dataset first
+    config_module.validate_dataset_mode(dataset_arg_val, "zeroshot")  # Just validate dataset part
+    
     examples = []
-    for _, row in data.iterrows():
-        example_data = {}
-        # Prepend the image_base_dir to the relative image path from the CSV
-        example_data['image'] = str(image_base_dir / row['img_path'])
-        example_data['question'] = question_str
-        example_data['answer'] = 'real' if str(row['dataset']).lower() == 'real' else 'ai-generated'
-        examples.append(example_data)
-    return examples
-
-def load_d3_data_examples(dir_path: Union[str, Path], question_str: str) -> List[Dict[str, Any]]:
-    examples = []
-    directory = Path(dir_path)
-    if not directory.is_dir():
-        logger.error(f"D3 data directory not found: {directory}")
-        return examples
-
-    for file_name in os.listdir(directory):
-        if file_name.lower().endswith(".png"):
-            full_path = directory / file_name
-            answer = 'real' if 'real' in file_name.lower() else 'ai-generated'
+    logger.info(f"Loading dataset: {dataset_arg_val}")
+    
+    try:
+        # Determine dataset type and file paths
+        if 'genimage' in dataset_arg_val:
+            dataset_type = 'genimage'
+            csv_file_path = config_module.GENIMAGE_2K_CSV_FILE if '2k' in dataset_arg_val else config_module.GENIMAGE_10K_CSV_FILE
+            image_base_dir = config_module.GENIMAGE_DIR
+        elif 'd3' in dataset_arg_val:
+            dataset_type = 'd3'
+            csv_file_path = config_module.D3_2K_CSV_FILE if 'd32k' in dataset_arg_val else config_module.D3_7K_CSV_FILE
+            image_base_dir = None  # D3 uses full paths
+        elif 'df40' in dataset_arg_val:
+            dataset_type = 'df40'
+            csv_file_path = config_module.DF40_2K_CSV_FILE if '2k' in dataset_arg_val else config_module.DF40_10K_CSV_FILE
+            image_base_dir = config_module.DF40_DIR
+        else:
+            raise ValueError(f"Dataset '{dataset_arg_val}' not recognized. Supported: {config_module.SUPPORTED_DATASETS}")
+        
+        # Check if CSV file exists
+        if not csv_file_path.exists():
+            raise FileNotFoundError(f"Dataset file not found: {csv_file_path}")
+        
+        # Unified CSV-based loading for all datasets
+        data = pd.read_csv(csv_file_path)
+        
+        for _, row in data.iterrows():
+            if dataset_type == 'd3':
+                # D3 CSV contains full paths and standardized answers
+                image_path = row['image']
+                answer = row['answer']
+            elif dataset_type == 'genimage':
+                # GenImage CSV contains relative paths and dataset column
+                image_path = str(image_base_dir / row['img_path'])
+                answer = 'real' if str(row['dataset']).lower() == 'real' else 'ai-generated'
+            elif dataset_type == 'df40':
+                # DF40 CSV contains relative paths and label column
+                image_path = str(image_base_dir / row['file_path'])
+                answer = 'real' if str(row['label']).lower() == 'real' else 'ai-generated'
+                
             examples.append({
-                'image': str(full_path),
+                'image': image_path,
                 'question': question_str,
                 'answer': answer
             })
-    return examples
-
-def load_df40_data_examples(csv_file_path_str: Union[str, Path], image_base_dir_str: Union[str, Path], question_str: str) -> List[Dict[str, Any]]:
-    csv_file_path = Path(csv_file_path_str)
-    image_base_dir = Path(image_base_dir_str) # Use the provided image base directory
-    data = pd.read_csv(csv_file_path)
-    examples = []
-    for _, row in data.iterrows():
-        example_data = {}
-        example_data['image'] = str(image_base_dir / row['file_path'])
-        example_data['question'] = question_str
-        example_data['answer'] = 'real' if str(row['label']).lower() == 'real' else 'ai-generated'
-        examples.append(example_data)
+            
+    except Exception as e:
+        logger.error(f"Error loading dataset {dataset_arg_val}: {e}")
+        raise
+    
+    if not examples:
+        raise ValueError(f"No examples found for dataset {dataset_arg_val}")
+    
+    # Validate data structure (enhanced from Zero-shot-mod)
+    required_fields = ['image', 'question', 'answer']
+    for i, item in enumerate(examples[:5]):  # Check first 5 items for structure
+        for field in required_fields:
+            if field not in item:
+                logger.warning(f"Data item {i} missing field '{field}', may cause issues")
+        
+        # Additional validation: check if image files exist
+        if 'image' in item and not Path(item['image']).exists():
+            logger.warning(f"Image file not found: {item['image']}")
+    
+    # Shuffle for consistent evaluation (with seed for reproducibility)
+    import random
+    random.seed(0)
+    random.shuffle(examples)
+    logger.info(f"Loaded and shuffled {len(examples)} examples for dataset '{dataset_arg_val}'.")
+    
     return examples
 
 def check_nltk_resource(resource_id: str, download_name: Union[str, None] = None) -> None:
@@ -875,35 +1048,186 @@ def get_subset_recall_counts_from_rationales(
 # SHARED MODEL EVALUATION FUNCTIONS
 # =============================================================================
 
-def get_generation_kwargs(num_sequences: int) -> Dict[str, Any]:
+
+def update_macro_f1(score, pred_answer, ground_answer):
     """
-    Get standard generation parameters for VLM evaluation.
+    Update confusion matrix and rolling macro F1 score for a single prediction.
+    
+    This function handles the comparison between predicted and ground truth answers,
+    following Zero-shot-mod's pattern of separating scoring from answer extraction.
     
     Args:
-        num_sequences: Number of sequences for self-consistency
+        score: Score dictionary containing TP, TN, FP, FN counts
+        pred_answer: Predicted answer ('real' or 'ai-generated')
+        ground_answer: Ground truth answer ('real' or 'ai-generated')
         
     Returns:
-        Dictionary of generation parameters
+        Updated score dictionary with updated confusion matrix and macro_f1
     """
-    if num_sequences == 1:
-        return {
-            "max_new_tokens": 300,
-            "do_sample": False,
-            "repetition_penalty": 1,
-            "top_k": None,
-            "top_p": None,
-            "temperature": 1
-        }
+    # Update confusion matrix
+    if pred_answer == ground_answer:
+        score['correct'] += 1
+        if ground_answer == 'real':
+            score['TN'] += 1
+        else:  # ai-generated
+            score['TP'] += 1
     else:
-        return {
-            "max_new_tokens": 300,
-            "do_sample": True,
-            "repetition_penalty": 1,
-            "top_k": None,
-            "top_p": None,
-            "temperature": 1,
-            "num_return_sequences": num_sequences
+        if ground_answer == 'real' and pred_answer == 'ai-generated':
+            score['FP'] += 1
+        elif ground_answer == 'ai-generated' and pred_answer == 'real':
+            score['FN'] += 1
+    
+    score['n'] += 1
+    
+    # Calculate rolling macro F1 from updated confusion matrix
+    if score['n'] > 0:
+        # Calculate precision, recall, F1 for each class
+        real_precision = score['TN'] / (score['TN'] + score['FN']) if (score['TN'] + score['FN']) > 0 else 0
+        real_recall = score['TN'] / (score['TN'] + score['FP']) if (score['TN'] + score['FP']) > 0 else 0
+        real_f1 = 2 * real_precision * real_recall / (real_precision + real_recall) if (real_precision + real_recall) > 0 else 0
+        
+        ai_precision = score['TP'] / (score['TP'] + score['FP']) if (score['TP'] + score['FP']) > 0 else 0
+        ai_recall = score['TP'] / (score['TP'] + score['FN']) if (score['TP'] + score['FN']) > 0 else 0
+        ai_f1 = 2 * ai_precision * ai_recall / (ai_precision + ai_recall) if (ai_precision + ai_recall) > 0 else 0
+        
+        # Macro F1 is average of class F1 scores
+        score['macro_f1'] = (real_f1 + ai_f1) / 2 * 100  # Convert to percentage
+    else:
+        score['macro_f1'] = 0.0
+    
+    return score
+
+def process_evaluation_batch(examples, responses, score, responses_data, skipped_data, 
+                           pbar, failed_indices=None, batch_start_idx=0, num_return_sequences=1,
+                           model_name=None, answer_phrase=None):
+    """
+    Shared evaluation processing logic for AI-generated image detection.
+    
+    Processes responses and updates scores, response data, and progress tracking.
+    This follows Zero-shot-mod's pattern for DRY evaluation processing.
+    
+    Args:
+        examples: List of example dictionaries to process (must contain 'prompt' key)
+        responses: List of response strings (flattened for multi-sequence)
+        score: Score dictionary to update
+        responses_data: List to append response entries to
+        skipped_data: List to append failed examples to
+        pbar: Progress bar to update
+        failed_indices: List of indices that failed processing (optional)
+        batch_start_idx: Starting index for this batch
+        num_return_sequences: Number of sequences per example
+        model_name: Name of the model (for response processing)
+        answer_phrase: Phrase for answer extraction
+        
+    Returns:
+        tuple: (score, responses_data, skipped_data) - updated versions
+    """
+    if failed_indices is None:
+        failed_indices = []
+    
+    # Process each example in the batch (handling self-consistency)
+    for example_idx, example in enumerate(examples):
+        if example_idx in failed_indices:
+            # Skip failed examples
+            skipped_data.append({
+                'example': example,
+                'error': 'Response generation failed',
+                'index': batch_start_idx + example_idx
+            })
+            pbar.update(1)
+            continue
+        
+        # Get responses for this specific example (handling self-consistency)
+        start_idx = example_idx * num_return_sequences
+        end_idx = start_idx + num_return_sequences
+        example_responses = responses[start_idx:end_idx]
+        
+        # Validate and process responses
+        if model_name != 'code':
+            # VLM models: extract answers from multiple responses
+            pred_answer, pred_answers, rationales = get_pred_answers(example_responses, answer_phrase)
+        else:
+            # CoDE model: response is already the answer (should be single response)
+            pred_answer = example_responses[0] if example_responses else 'unknown'
+            pred_answers = [pred_answer]
+            rationales = ['']
+        
+        ground_answer = example['answer']
+        
+        # Update confusion matrix and rolling macro F1
+        score = update_macro_f1(score, pred_answer, ground_answer)
+        
+        # Create entry matching existing JSONL format exactly
+        response_entry = {
+            'question': example['question'],
+            'prompt': example['prompt'],
+            'image': example['image'],
+            'rationales': rationales,        # Rationales from each response
+            'ground_answer': ground_answer,
+            'pred_answers': pred_answers,    # Individual predictions from each response
+            'pred_answer': pred_answer,      # Final prediction after majority voting
+            'cur_score': 1 if pred_answer == ground_answer else 0
         }
+        responses_data.append(response_entry)
+        
+        # Update progress with rolling macro F1
+        pbar.set_postfix({
+            'Accuracy': f"{score['correct']}/{score['n']} ({100*score['correct']/score['n']:.1f}%)" if score['n'] > 0 else "0/0",
+            'Macro F1': f"{score['macro_f1']:.1f}%" if score['n'] > 0 else "0.0%",
+            'Batch': f"{(batch_start_idx + example_idx)//20 + 1}"  # Approximate batch number
+        })
+        pbar.update(1)
+    
+    return score, responses_data, skipped_data
+
+def _process_example_response(example: Dict[str, Any], responses: List[str], 
+                             labels_for_validation: List[str], answer_phrase: str,
+                             correct_count: int, confusion_matrix_counts: Dict[str, int],
+                             rationales_data_output_list: List[Dict[str, Any]]) -> int:
+    """
+    Process a single example's responses and update metrics.
+    
+    Args:
+        example: Example dictionary with image, question, answer
+        responses: List of response strings for this example
+        labels_for_validation: Valid answer labels
+        answer_phrase: Answer phrase for validation
+        correct_count: Current correct count (will be modified)
+        confusion_matrix_counts: Confusion matrix counts (will be modified)
+        rationales_data_output_list: Results list (will be modified)
+        
+    Returns:
+        Score for this example (0 or 1)
+    """
+    cur_score, pred_answer, pred_answers_list, rationales_list = validate_answers(
+        example, responses, labels_for_validation, answer_phrase
+    )
+    
+    # Update confusion matrix
+    if example['answer'] == 'real':
+        if cur_score == 1:
+            confusion_matrix_counts['TP'] += 1
+        else:
+            confusion_matrix_counts['FN'] += 1
+    elif example['answer'] == 'ai-generated':
+        if cur_score == 1:
+            confusion_matrix_counts['TN'] += 1
+        else:
+            confusion_matrix_counts['FP'] += 1
+    
+    # Store detailed results
+    rationales_data_output_list.append({
+        "question": example['question'],
+        "prompt": example.get('prompt', ''),  # May be set by response generator
+        "image": example['image'],
+        "rationales": rationales_list,
+        'ground_answer': example['answer'],
+        'pred_answers': pred_answers_list,
+        'pred_answer': pred_answer,
+        'cur_score': cur_score
+    })
+    
+    return cur_score
 
 def run_model_evaluation(
     test_data: List[Dict[str, Any]],
@@ -913,7 +1237,6 @@ def run_model_evaluation(
     num_sequences: int,
     batch_size: int,
     dataset_name: str,
-    model_prefix: str,
     config_module: Any
 ) -> float:
     """
@@ -931,7 +1254,6 @@ def run_model_evaluation(
         num_sequences: Number of sequences for self-consistency
         batch_size: Batch size for inference
         dataset_name: Dataset identifier
-        model_prefix: Model prefix for output files (e.g., "AI_llama")
         config_module: Configuration module
         
     Returns:
@@ -947,91 +1269,44 @@ def run_model_evaluation(
     labels_for_validation = ['ai-generated', 'real']
     answer_phrase = config_module.EVAL_ANSWER_PHRASE
     
-    # Determine actual batch size (self-consistency uses batch_size=1)
-    actual_batch_size = 1 if num_sequences > 1 else batch_size
+    # Calculate effective batch size following Zero-shot-mod pattern
+    if batch_size > num_sequences:
+        effective_batch_size = batch_size // num_sequences
+    else:
+        effective_batch_size = num_sequences
     
-    # Process in batches
+    # Process in batches - unified approach for both self-consistency and regular batching
     with tqdm(total=len(test_data), dynamic_ncols=True) as pbar:
-        for i in range(0, len(test_data), actual_batch_size):
+        for i in range(0, len(test_data), effective_batch_size):
             # Get current batch
-            batch_examples = test_data[i:i + actual_batch_size]
+            batch_examples = test_data[i:i + effective_batch_size]
             
             # Generate responses using model-specific function
-            full_responses = response_generator_fn(batch_examples, actual_batch_size, num_sequences)
+            full_responses = response_generator_fn(batch_examples, effective_batch_size, num_sequences)
             
-            # Process responses and update metrics
-            if actual_batch_size == 1 and num_sequences > 1:
-                # Self-consistency mode: single example with multiple responses
+            # Unified batch processing - handles both self-consistency and regular batching
+            if effective_batch_size == 1 and num_sequences > 1:
+                # Self-consistency mode: single example, multiple responses
                 example = batch_examples[0]
-                
-                cur_score, pred_answer, pred_answers_list, rationales_list = validate_answers(
-                    example, full_responses, labels_for_validation, answer_phrase
+                cur_score = _process_example_response(
+                    example, full_responses, labels_for_validation, answer_phrase,
+                    correct_count, confusion_matrix_counts, rationales_data_output_list
                 )
-                
-                # Update metrics
                 correct_count += cur_score
-                if example['answer'] == 'real':
-                    if cur_score == 1:
-                        confusion_matrix_counts['TP'] += 1
-                    else:
-                        confusion_matrix_counts['FN'] += 1
-                elif example['answer'] == 'ai-generated':
-                    if cur_score == 1:
-                        confusion_matrix_counts['TN'] += 1
-                    else:
-                        confusion_matrix_counts['FP'] += 1
-                
-                # Store detailed results
                 current_macro_f1 = get_macro_f1_from_counts(confusion_matrix_counts)
-                rationales_data_output_list.append({
-                    "question": example['question'],
-                    "prompt": example.get('prompt', ''),  # May be set by response generator
-                    "image": example['image'],
-                    "rationales": rationales_list,
-                    'ground_answer': example['answer'],
-                    'pred_answers': pred_answers_list,
-                    'pred_answer': pred_answer,
-                    'cur_score': cur_score
-                })
-                
                 update_progress(pbar, correct_count, current_macro_f1 * 100)
-                
             else:
-                # Batch mode: multiple examples with single response each
-                for idx, single_response in enumerate(full_responses):
-                    example = batch_examples[idx]
-                    
-                    cur_score, pred_answer, pred_answers_list, rationales_list = validate_answers(
-                        example, [single_response], labels_for_validation, answer_phrase
-                    )
-                    
-                    # Update metrics
-                    correct_count += cur_score
-                    if example['answer'] == 'real':
-                        if cur_score == 1:
-                            confusion_matrix_counts['TP'] += 1
-                        else:
-                            confusion_matrix_counts['FN'] += 1
-                    elif example['answer'] == 'ai-generated':
-                        if cur_score == 1:
-                            confusion_matrix_counts['TN'] += 1
-                        else:
-                            confusion_matrix_counts['FP'] += 1
-                    
-                    # Store detailed results
-                    current_macro_f1 = get_macro_f1_from_counts(confusion_matrix_counts)
-                    rationales_data_output_list.append({
-                        "question": example['question'],
-                        "prompt": example.get('prompt', ''),  # May be set by response generator
-                        "image": example['image'],
-                        "rationales": rationales_list,
-                        'ground_answer': example['answer'],
-                        'pred_answers': pred_answers_list,
-                        'pred_answer': pred_answer,
-                        'cur_score': cur_score
-                    })
-                    
-                    update_progress(pbar, correct_count, current_macro_f1 * 100)
+                # Regular batch mode: multiple examples, one response each
+                for idx, example in enumerate(batch_examples):
+                    if idx < len(full_responses):
+                        responses_for_example = [full_responses[idx]]
+                        cur_score = _process_example_response(
+                            example, responses_for_example, labels_for_validation, answer_phrase,
+                            correct_count, confusion_matrix_counts, rationales_data_output_list
+                        )
+                        correct_count += cur_score
+                        current_macro_f1 = get_macro_f1_from_counts(confusion_matrix_counts)
+                        update_progress(pbar, correct_count, current_macro_f1 * 100)
     
     # Calculate final metrics and save results
     final_macro_f1 = get_macro_f1_from_counts(confusion_matrix_counts)
@@ -1040,7 +1315,6 @@ def run_model_evaluation(
         rationales_data_output_list, 
         confusion_matrix_counts, 
         final_macro_f1,
-        model_prefix, 
         dataset_name, 
         model_name, 
         mode_type, 
@@ -1050,40 +1324,60 @@ def run_model_evaluation(
     
     return final_macro_f1
 
-def load_test_data_unified(dataset_arg_val: str, question_str: str, config_module: Any) -> List[Dict[str, Any]]:
+def get_pred_answers(
+    full_responses: List[str],
+    answer_phrase: str,
+    labels: List[str] = None
+) -> Tuple[str, List[str], List[str]]:
     """
-    Load test data for evaluation using dataset-specific helpers.
+    Extract predicted answers from model responses using legacy validation logic.
+    
+    This function uses the exact same answer extraction logic as the legacy
+    validate_answers function to ensure consistent results.
     
     Args:
-        dataset_arg_val: Dataset identifier (e.g., 'genimage2k', 'd32k', 'df402k')
-        question_str: Question text to include in examples
-        config_module: Configuration module containing dataset paths
+        full_responses: List of raw text responses from the model
+        answer_phrase: Delimiter phrase that separates rationale from final answer
+        labels: List of valid answer labels to search for (e.g., ['real', 'ai-generated'])
         
     Returns:
-        List of example dictionaries with 'image', 'question', 'answer' keys
+        Tuple containing:
+        - pred_answer (str): Final predicted answer after majority voting
+        - pred_answers (List[str]): Individual predictions from each response
+        - rationales (List[str]): Rationale text preceding each answer
     """
-    examples = []
-    logger.info(f"Loading dataset: {dataset_arg_val}")
+    if labels is None:
+        labels = ['real', 'ai-generated']  # Default for image detection
+        
+    pred_answers = []
+    rationales = []
+
+    for r in full_responses:
+        # Extract the answer and the rationale (legacy logic)
+        if answer_phrase in r:        
+            rationale = r.split(answer_phrase)[0].strip()
+            pred = r.split(answer_phrase)[1].strip()
+        else:
+            rationale = ""
+            pred = r.strip()
+        
+        # Extract the answer (legacy regex logic)
+        regex = r"|".join(labels)
+        pred_match = re.search(regex, pred.lower())
+        if pred_match:
+            pred = pred_match.group()
+        else:
+            pred = r
+        
+        # Append the prediction
+        pred_answers.append(pred)
+        rationales.append(rationale)
     
-    if 'genimage' in dataset_arg_val:
-        file_to_load = config_module.GENIMAGE_2K_CSV_FILE if '2k' in dataset_arg_val else config_module.GENIMAGE_10K_CSV_FILE
-        examples = load_genimage_data_examples(file_to_load, config_module.GENIMAGE_DIR, question_str)
-    elif 'd3' in dataset_arg_val:
-        examples = load_d3_data_examples(config_module.D3_DIR, question_str)
-    elif 'df40' in dataset_arg_val:
-        file_to_load = config_module.DF40_2K_CSV_FILE if '2k' in dataset_arg_val else config_module.DF40_10K_CSV_FILE
-        examples = load_df40_data_examples(file_to_load, config_module.DF40_DIR, question_str)
-    else:
-        logger.error(f"Dataset '{dataset_arg_val}' not recognized.")
-        return []
+    # Set the greedy most common prediction (legacy logic)
+    pred_answer = Counter(pred_answers).most_common(1)[0][0]
     
-    # Shuffle for consistent evaluation
-    import random
-    random.seed(0)
-    random.shuffle(examples)
-    logger.info(f"Loaded and shuffled {len(examples)} examples for dataset '{dataset_arg_val}'.")
-    
-    return examples
+    return pred_answer, pred_answers, rationales
+
 
 if __name__ == '__main__':
     # Example usage (can be expanded)

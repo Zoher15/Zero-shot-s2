@@ -371,8 +371,8 @@ def build_prompts(examples, mode_type, processor=None, model_name=None):
             
             base64_image = encode_image(example['image'])
             user_content = [
-                {"type": "input_text", "text": example['question']},
-                {"type": "input_image", "image_url": f"data:image/jpeg;base64,{base64_image}"}
+                {"type": "input_image", "image_url": f"data:image/jpeg;base64,{base64_image}"},
+                {"type": "input_text", "text": example['question']}
             ]
         
         messages.append({
@@ -388,7 +388,8 @@ def build_prompts(examples, mode_type, processor=None, model_name=None):
             # OpenAI: create basic template by joining messages
             if mode_type in config.REASONING_PREFIXES:
                 logger.warning(f"OpenAI format does not support reasoning prefixes. Mode '{mode_type}' will work as 'zeroshot'.")
-            example['prompt'] = "\n".join([f"{msg['role'].title()}: {msg['content'] if isinstance(msg['content'], str) else msg['content'][1]['text']}" for msg in messages])
+            
+            example['prompt'] = "\n".join([f"{msg['role'].title()}: {msg['content'] if isinstance(msg['content'], str) else next((item['text'] for item in msg['content'] if item.get('type') in ['input_text', 'text']), '')}" for msg in messages])
         else:
             # Llama/Qwen: use chat template to create string prompt
             chat_template_kwargs = {"add_generation_prompt": True}

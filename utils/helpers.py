@@ -1171,11 +1171,10 @@ def process_evaluation_batch(examples, responses, score, responses_data, skipped
         responses_data.append(response_entry)
         
         # Update progress with rolling macro F1
-        pbar.set_postfix({
-            'Accuracy': f"{score['correct']}/{score['n']} ({100*score['correct']/score['n']:.1f}%)" if score['n'] > 0 else "0/0",
-            'Macro F1': f"{score['macro_f1']:.1f}%" if score['n'] > 0 else "0.0%",
-            'Batch': f"{(batch_start_idx + example_idx)//20 + 1}"  # Approximate batch number
-        })
+        accuracy_str = f"{score['correct']}/{score['n']} ({100*score['correct']/score['n']:.1f}%)" if score['n'] > 0 else "0/0"
+        macro_f1_str = f"{score['macro_f1']:.1f}%" if score['n'] > 0 else "0.0%"
+        batch_str = f"{(batch_start_idx + example_idx)//20 + 1}"
+        pbar.set_description(f"Acc: {accuracy_str} | F1: {macro_f1_str} | Batch: {batch_str}")
         pbar.update(1)
     
     return score, responses_data, skipped_data
@@ -1366,8 +1365,6 @@ def get_pred_answers(
         pred_match = re.search(regex, pred.lower())
         if pred_match:
             pred = pred_match.group()
-        else:
-            pred = r
         
         # Append the prediction
         pred_answers.append(pred)

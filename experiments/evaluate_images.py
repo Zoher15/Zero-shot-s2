@@ -49,7 +49,7 @@ def parse_args_early():
     parser.add_argument("-llm", "--llm", type=str, required=True,
                        help="Model to evaluate",
                        choices=["qwen25-3b", "qwen25-7b", "qwen25-32b", "qwen25-72b",
-                               "llama3-11b", "llama3-90b", "code"])
+                               "llama3-11b", "llama3-90b", "code", "o3"])
     
     # Evaluation parameters
     parser.add_argument("-m", "--mode", type=str, default="zeroshot-2-artifacts",
@@ -77,9 +77,14 @@ args = parse_args_early()
 import config
 from utils import helpers
 
-# Initialize environment and logging
+# Initialize environment and logging with individual log files
 helpers.initialize_environment(args.cuda)
-helpers.setup_global_logger(config.EVAL_IMAGES_LOG_FILE)
+
+# Create individual log file for this specific evaluation run using model-organized structure
+log_file = config.get_model_output_dir(args.llm, 'logs', args.mode) / config.get_filename(
+    "log", dataset=args.dataset, model=args.llm, mode=args.mode, num_seq=args.num
+)
+helpers.setup_global_logger(log_file)
 logger = logging.getLogger(__name__)
 
 # NOW import PyTorch and model-specific libraries
@@ -104,6 +109,12 @@ elif args.llm == 'code':
     import joblib
     import transformers
     from huggingface_hub import hf_hub_download
+elif args.llm == 'o3':
+    import os
+    import time
+    import json
+    import tempfile
+    from openai import OpenAI
 
 
 # =============================================================================
@@ -224,6 +235,8 @@ def load_qwen_model(model_name: str):
     ).eval()
     
     processor = AutoProcessor.from_pretrained(model_path)
+    # Set padding to left for generation tasks
+    processor.tokenizer.padding_side = "left"
     
     return model, processor
 
@@ -459,7 +472,7 @@ def get_responses(model, processor, batch_examples, model_name, model_kwargs, an
         # ===== SECOND STAGE: ANSWER GENERATION =====
         
         # Prepare second generation prompts (like zero_shot_mod)
-        second_prompts = [f"{first_prompt}{first_response}.\n\n{answer_phrase}" for first_prompt, first_response in zip(first_prompts, first_responses)]
+        second_prompts = [f"{example['prompt']}{first_response}\n\n{answer_phrase}" for example, first_response in zip(batch_examples_expanded, first_responses)]
         
         # Second generation with reduced max tokens for faster inference  
         model_kwargs_copy['max_new_tokens'] = 50
@@ -472,7 +485,7 @@ def get_responses(model, processor, batch_examples, model_name, model_kwargs, an
         )
         
         # Combine first and second responses (like zero_shot_mod)
-        full_responses = [f"{first_response}.\n\n{answer_phrase}{second_response}" for first_response, second_response in zip(first_responses, second_responses)]
+        full_responses = [f"{first_response}\n\n{answer_phrase}{second_response}" for first_response, second_response in zip(first_responses, second_responses)]
         
         return full_responses
         
@@ -531,22 +544,212 @@ def generate_code_responses(model, processor, batch_examples, mode_type, model_k
     
     return responses
 
+def get_openai_responses(batch_examples, model_name, model_kwargs, mode_type, dataset_name='images'):
+    """
+    Generate responses using OpenAI O3 batch API with persistence and tracking.
+    
+    Args:
+        batch_examples: List of examples with 'messages' keys
+        model_name: OpenAI model name ('o3')
+        model_kwargs: Model generation parameters 
+        mode_type: Evaluation mode (forced to 'zeroshot' for O3)
+        dataset_name: Dataset identifier for batch tracking
+        
+    Returns:
+        List of response strings from O3 model
+    """
+    # Force zeroshot mode for O3 compatibility
+    if mode_type != 'zeroshot':
+        logger.warning(f"O3 only supports 'zeroshot' mode. Switching from '{mode_type}' to 'zeroshot'")
+        mode_type = 'zeroshot'
+    
+    logger.info(f"Starting O3 batch evaluation for {len(batch_examples)} examples")
+    
+    # Setup OpenAI client
+    client = OpenAI(api_key=os.getenv('OPENAI_API_KEY'))
+    
+    # Create batch tracking file path
+    batch_tracking_file = Path(config.OUTPUTS_DIR) / 'batches' / f"batch_o3_{dataset_name}_{mode_type}_{len(batch_examples)}examples.json"
+    
+    # Check existing batch and get user decision
+    batch_id, batch_info = None, None
+    try:
+        with open(batch_tracking_file, 'r', encoding='utf-8') as f:
+            existing = json.load(f)
+        status = client.batches.retrieve(existing['batch_id']).status
+        
+        reuse_batch = False
+        if status in ['failed', 'expired', 'cancelled']:
+            print(f"Previous batch failed ({status}). Will submit new batch.")
+        elif status in ['validating', 'in_progress'] and input(f"Found batch {existing['batch_id']} ({status}). Cancel and submit new? (y/N): ").strip().lower() != 'y':
+            reuse_batch = True
+        elif status == 'completed' and input(f"Found completed batch {existing['batch_id']}. Override with new? (y/N): ").strip().lower() != 'y':
+            reuse_batch = True
+            
+        if reuse_batch:
+            batch_id, batch_info = existing['batch_id'], existing
+            logger.info(f"Reusing existing batch: {batch_id}")
+    except FileNotFoundError:
+        pass
+    
+    # Submit new batch if no existing batch
+    if batch_id is None:
+        # Create batch requests
+        batch_requests = []
+        example_metadata = []
+        timestamp = int(time.time())
+        
+        for i, example in enumerate(batch_examples):
+            request_id = f"req_{timestamp}_{i:06d}"
+            
+            # Build request body with generation parameters
+            request_body = {
+                "model": "o3",
+                "input": example['messages'],
+                "reasoning": {
+                    "effort": "high",
+                    "summary": "detailed"
+                }
+            }
+            
+            # Add OpenAI-compatible generation parameters
+            if 'temperature' in model_kwargs:
+                request_body['temperature'] = model_kwargs['temperature']
+            if 'top_p' in model_kwargs:
+                request_body['top_p'] = model_kwargs['top_p']
+            
+            batch_requests.append({
+                "custom_id": request_id,
+                "method": "POST", 
+                "url": "/v1/responses",
+                "body": request_body
+            })
+            
+            # Store metadata for result mapping
+            example_metadata.append({
+                'request_id': request_id,
+                'example_index': i,
+                'example': example
+            })
+        
+        # Submit batch
+        print("Building and submitting O3 batch...")
+        with tempfile.NamedTemporaryFile(mode='w', suffix='.jsonl', delete=False) as f:
+            for req in batch_requests:
+                json.dump(req, f)
+                f.write('\n')
+            temp_file = f.name
+        
+        try:
+            # Upload file and create batch
+            with open(temp_file, 'rb') as f:
+                file_id = client.files.create(file=f, purpose='batch').id
+            
+            batch_response = client.batches.create(
+                input_file_id=file_id,
+                endpoint="/v1/responses",
+                completion_window="24h"
+            )
+            batch_id = batch_response.id
+            print(f"O3 batch submitted: {batch_id}")
+            
+            # Save tracking info
+            batch_info = {
+                'batch_id': batch_id,
+                'submission_time': time.time(),
+                'example_metadata': example_metadata,
+                'model_kwargs': model_kwargs,
+                'dataset_name': dataset_name,
+                'mode_type': mode_type,
+                'total_examples': len(batch_examples)
+            }
+            
+            batch_tracking_file.parent.mkdir(parents=True, exist_ok=True)
+            with open(batch_tracking_file, 'w', encoding='utf-8') as f:
+                json.dump(batch_info, f, indent=4)
+            logger.info(f"Batch tracking info saved to {batch_tracking_file}")
+            
+        finally:
+            os.unlink(temp_file)
+    
+    # Wait for completion with progress updates
+    while True:
+        status_info = client.batches.retrieve(batch_id)
+        if status_info.status == 'completed':
+            break
+        elif status_info.status in ['failed', 'expired', 'cancelled']:
+            raise RuntimeError(f"Batch {batch_id} failed: {status_info.status}")
+        print(f"Batch {batch_id}: {status_info.status} ({status_info.request_counts.completed}/{status_info.request_counts.total})")
+        time.sleep(60)
+    
+    # Download and parse results
+    with tempfile.NamedTemporaryFile(mode='w+b', delete=False) as f:
+        f.write(client.files.content(status_info.output_file_id).content)
+        result_file = f.name
+    
+    try:
+        # Parse results with error tracking
+        responses = [''] * len(batch_examples)
+        metadata_map = {item['request_id']: item for item in batch_info['example_metadata']}
+        result_status = {}  # Track status: 'success', 'error', or 'missing'
+        
+        # Parse batch results and track status
+        with open(result_file, 'r', encoding='utf-8') as f:
+            for line in f:
+                result = json.loads(line.strip())
+                if result['custom_id'] in metadata_map:
+                    if result.get('error'):
+                        result_status[result['custom_id']] = ('error', f"Batch error: {result['error']}")
+                    else:
+                        response_body = result['response']['body']
+                        reasoning, answer = '', ''
+                        
+                        # Parse O3 response format
+                        for output_item in response_body.get('output', []):
+                            if output_item.get('type') == 'reasoning':
+                                reasoning = '\n\n'.join(item.get('text', '') for item in output_item.get('summary', []) if item.get('type') == 'summary_text')
+                            elif output_item.get('type') == 'message':
+                                answer = next((item.get('text', '') for item in output_item.get('content', []) if item.get('type') == 'output_text'), '')
+                        
+                        # Combine reasoning and answer
+                        full_response = f"{reasoning}\n\nAnswer: {answer}" if reasoning else answer
+                        result_status[result['custom_id']] = ('success', full_response)
+        
+        # Process all metadata items based on their status
+        for meta in batch_info['example_metadata']:
+            request_id = meta['request_id']
+            status = result_status.get(request_id, ('missing', "Missing from batch output"))
+            idx = meta['example_index']
+            
+            if status[0] == 'success':
+                responses[idx] = status[1]
+            else:
+                # Handle both error and missing cases
+                error_msg = status[1]
+                logger.warning(f"Request failed for example {idx}: {error_msg}")
+                responses[idx] = ''  # Empty response for failed requests
+                
+    finally:
+        os.unlink(result_file)
+    
+    return responses
+
 # =============================================================================
 # UNIFIED EVALUATION FUNCTION
 # =============================================================================
 
-def evaluate_hf_model(test_data, model, processor, model_name, mode_type, model_kwargs, batch_size=20):
+def evaluate_model(test_data, model, processor, model_name, mode_type, model_kwargs, batch_size=20):
     """
-    Unified HuggingFace model evaluation function for AI-generated image detection.
+    Unified model evaluation function for AI-generated image detection.
     
     Evaluates model performance on image detection tasks by processing examples in batches,
-    generating responses, and computing macro F1 scores. Supports both Qwen and Llama VLMs
-    as well as CoDE classification model.
+    generating responses, and computing macro F1 scores. Supports HuggingFace models 
+    (Qwen, Llama VLMs, CoDE) and OpenAI models (O3).
     
     Args:
         test_data: List of test examples to evaluate
-        model: The loaded model for inference
-        processor: Model processor (for VLMs) or None (for CoDE)
+        model: The loaded model for inference (None for OpenAI models)
+        processor: Model processor (for VLMs) or None (for CoDE/OpenAI)
         model_name: Name of the model (determines processing approach)
         mode_type: String specifying the reasoning mode
         model_kwargs: Dictionary of model generation parameters
@@ -587,7 +790,10 @@ def evaluate_hf_model(test_data, model, processor, model_name, mode_type, model_
 
     # Calculate effective batch size
     num_return_sequences = model_kwargs.get('num_return_sequences', 1)
-    if batch_size > num_return_sequences:
+    if model_name == 'o3':
+        # O3: Process all examples in single batch for API efficiency
+        effective_batch_size = len(test_data)
+    elif batch_size > num_return_sequences:
         effective_batch_size = batch_size // num_return_sequences
     else:
         effective_batch_size = num_return_sequences
@@ -607,6 +813,10 @@ def evaluate_hf_model(test_data, model, processor, model_name, mode_type, model_
             elif model_name == 'code':
                 responses = generate_code_responses(
                     model, processor, batch_examples, mode_type, model_kwargs
+                )
+            elif model_name == 'o3':
+                responses = get_openai_responses(
+                    batch_examples, model_name, model_kwargs, mode_type, 'images'
                 )
             else:
                 raise ValueError(f"Unsupported model: {model_name}")
@@ -691,6 +901,8 @@ def main():
             model, processor = load_llama_model(args.llm)
         elif args.llm == 'code':
             model, processor = load_code_model()
+        elif args.llm == 'o3':
+            model, processor = None, None  # O3 doesn't need local model loading
         else:
             raise ValueError(f"Unsupported model: {args.llm}")
         
@@ -705,7 +917,7 @@ def main():
     
     # Run evaluation using unified function
     try:
-        score, responses_data, skipped_data = evaluate_hf_model(
+        score, responses_data, skipped_data = evaluate_model(
             test_data=test_data,
             model=model,
             processor=processor,  

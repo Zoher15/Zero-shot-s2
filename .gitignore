@@ -125,3 +125,11 @@ outputs/**/*.svg
 !LICENSE.md
 !setup_environment.sh
 !*.py
+
+# Documentation and job files (exclude README)
+*.md
+!README.md
+*.txt
+
+# Job generation scripts
+generate_eval_jobs_images.py

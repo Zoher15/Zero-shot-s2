@@ -32,6 +32,7 @@ Usage:
 """
 
 import argparse
+import concurrent.futures
 import logging
 import sys
 from pathlib import Path
@@ -76,6 +77,7 @@ args = parse_args_early()
 # Import config and helpers after argument parsing
 import config
 from utils import helpers
+from openai_requests import get_openai_responses
 
 # Initialize environment and logging with individual log files
 helpers.initialize_environment(args.cuda)
@@ -166,10 +168,10 @@ def process_model_batch(model, processor, prompts, model_kwargs, extra_args, mod
             ).to(model.device)
             
         elif model_name.startswith('llama'):
-            # Llama: Use PIL Image.open from file paths, nested list format required
+            # Llama: Use PIL Image.open from file paths, nested list format
             image_inputs = [[Image.open(example['image']).convert("RGB")] for example in batch_examples_expanded]
             
-            # Llama processor call
+            # Processor call
             inputs = processor(
                 text=prompts, 
                 images=image_inputs, 
@@ -385,9 +387,14 @@ def build_prompts(examples, mode_type, processor=None, model_name=None):
         
         # Apply chat template or handle messages - differs by format
         if format_type == "openai":
-            # OpenAI: create basic template by joining messages
+            # OpenAI: Add reasoning prefix to system message if needed
             if mode_type in config.REASONING_PREFIXES:
-                logger.warning(f"OpenAI format does not support reasoning prefixes. Mode '{mode_type}' will work as 'zeroshot'.")
+                reasoning_prefix = config.REASONING_PREFIXES[mode_type]
+                # Create system message with reasoning prefix instruction
+                messages.insert(0, {
+                    "role": "system", 
+                    "content": f"Start your responses with \"{reasoning_prefix}\""
+                })
             
             example['prompt'] = "\n".join([f"{msg['role'].title()}: {msg['content'] if isinstance(msg['content'], str) else next((item['text'] for item in msg['content'] if item.get('type') in ['input_text', 'text']), '')}" for msg in messages])
         else:
@@ -545,201 +552,11 @@ def generate_code_responses(model, processor, batch_examples, mode_type, model_k
     
     return responses
 
-def get_openai_responses(batch_examples, model_name, model_kwargs, mode_type, dataset_name='images'):
-    """
-    Generate responses using OpenAI O3 batch API with persistence and tracking.
-    
-    Args:
-        batch_examples: List of examples with 'messages' keys
-        model_name: OpenAI model name ('o3')
-        model_kwargs: Model generation parameters 
-        mode_type: Evaluation mode (forced to 'zeroshot' for O3)
-        dataset_name: Dataset identifier for batch tracking
-        
-    Returns:
-        List of response strings from O3 model
-    """
-    # Force zeroshot mode for O3 compatibility
-    if mode_type != 'zeroshot':
-        logger.warning(f"O3 only supports 'zeroshot' mode. Switching from '{mode_type}' to 'zeroshot'")
-        mode_type = 'zeroshot'
-    
-    logger.info(f"Starting O3 batch evaluation for {len(batch_examples)} examples")
-    
-    # Setup OpenAI client
-    client = OpenAI(api_key=os.getenv('OPENAI_API_KEY'))
-    
-    # Create batch tracking file path
-    batch_tracking_file = Path(config.OUTPUTS_DIR) / 'batches' / f"batch_o3_{dataset_name}_{mode_type}_{len(batch_examples)}examples.json"
-    
-    # Check existing batch and get user decision
-    batch_id, batch_info = None, None
-    try:
-        with open(batch_tracking_file, 'r', encoding='utf-8') as f:
-            existing = json.load(f)
-        status = client.batches.retrieve(existing['batch_id']).status
-        
-        reuse_batch = False
-        if status in ['failed', 'expired', 'cancelled']:
-            print(f"Previous batch failed ({status}). Will submit new batch.")
-        elif status in ['validating', 'in_progress'] and input(f"Found batch {existing['batch_id']} ({status}). Cancel and submit new? (y/N): ").strip().lower() != 'y':
-            reuse_batch = True
-        elif status == 'completed' and input(f"Found completed batch {existing['batch_id']}. Override with new? (y/N): ").strip().lower() != 'y':
-            reuse_batch = True
-            
-        if reuse_batch:
-            batch_id, batch_info = existing['batch_id'], existing
-            logger.info(f"Reusing existing batch: {batch_id}")
-    except FileNotFoundError:
-        pass
-    
-    # Submit new batch if no existing batch
-    if batch_id is None:
-        # Create batch requests
-        batch_requests = []
-        example_metadata = []
-        timestamp = int(time.time())
-        
-        for i, example in enumerate(batch_examples):
-            request_id = f"req_{timestamp}_{i:06d}"
-            
-            # Build request body with generation parameters
-            request_body = {
-                "model": "o3",
-                "input": example['messages'],
-                "reasoning": {
-                    "effort": "high",
-                    "summary": "detailed"
-                }
-            }
-            
-            # Add OpenAI-compatible generation parameters
-            if 'temperature' in model_kwargs:
-                request_body['temperature'] = model_kwargs['temperature']
-            if 'top_p' in model_kwargs:
-                request_body['top_p'] = model_kwargs['top_p']
-            
-            batch_requests.append({
-                "custom_id": request_id,
-                "method": "POST", 
-                "url": "/v1/responses",
-                "body": request_body
-            })
-            
-            # Store metadata for result mapping
-            example_metadata.append({
-                'request_id': request_id,
-                'example_index': i,
-                'example': example
-            })
-        
-        # Submit batch
-        print("Building and submitting O3 batch...")
-        with tempfile.NamedTemporaryFile(mode='w', suffix='.jsonl', delete=False) as f:
-            for req in batch_requests:
-                json.dump(req, f)
-                f.write('\n')
-            temp_file = f.name
-        
-        try:
-            # Upload file and create batch
-            with open(temp_file, 'rb') as f:
-                file_id = client.files.create(file=f, purpose='batch').id
-            
-            batch_response = client.batches.create(
-                input_file_id=file_id,
-                endpoint="/v1/responses",
-                completion_window="24h"
-            )
-            batch_id = batch_response.id
-            print(f"O3 batch submitted: {batch_id}")
-            
-            # Save tracking info
-            batch_info = {
-                'batch_id': batch_id,
-                'submission_time': time.time(),
-                'example_metadata': example_metadata,
-                'model_kwargs': model_kwargs,
-                'dataset_name': dataset_name,
-                'mode_type': mode_type,
-                'total_examples': len(batch_examples)
-            }
-            
-            batch_tracking_file.parent.mkdir(parents=True, exist_ok=True)
-            with open(batch_tracking_file, 'w', encoding='utf-8') as f:
-                json.dump(batch_info, f, indent=4)
-            logger.info(f"Batch tracking info saved to {batch_tracking_file}")
-            
-        finally:
-            os.unlink(temp_file)
-    
-    # Wait for completion with progress updates
-    while True:
-        status_info = client.batches.retrieve(batch_id)
-        if status_info.status == 'completed':
-            break
-        elif status_info.status in ['failed', 'expired', 'cancelled']:
-            raise RuntimeError(f"Batch {batch_id} failed: {status_info.status}")
-        print(f"Batch {batch_id}: {status_info.status} ({status_info.request_counts.completed}/{status_info.request_counts.total})")
-        time.sleep(60)
-    
-    # Download and parse results
-    with tempfile.NamedTemporaryFile(mode='w+b', delete=False) as f:
-        f.write(client.files.content(status_info.output_file_id).content)
-        result_file = f.name
-    
-    try:
-        # Parse results with error tracking
-        responses = [''] * len(batch_examples)
-        metadata_map = {item['request_id']: item for item in batch_info['example_metadata']}
-        result_status = {}  # Track status: 'success', 'error', or 'missing'
-        
-        # Parse batch results and track status
-        with open(result_file, 'r', encoding='utf-8') as f:
-            for line in f:
-                result = json.loads(line.strip())
-                if result['custom_id'] in metadata_map:
-                    if result.get('error'):
-                        result_status[result['custom_id']] = ('error', f"Batch error: {result['error']}")
-                    else:
-                        response_body = result['response']['body']
-                        reasoning, answer = '', ''
-                        
-                        # Parse O3 response format
-                        for output_item in response_body.get('output', []):
-                            if output_item.get('type') == 'reasoning':
-                                reasoning = '\n\n'.join(item.get('text', '') for item in output_item.get('summary', []) if item.get('type') == 'summary_text')
-                            elif output_item.get('type') == 'message':
-                                answer = next((item.get('text', '') for item in output_item.get('content', []) if item.get('type') == 'output_text'), '')
-                        
-                        # Combine reasoning and answer
-                        full_response = f"{reasoning}\n\nAnswer: {answer}" if reasoning else answer
-                        result_status[result['custom_id']] = ('success', full_response)
-        
-        # Process all metadata items based on their status
-        for meta in batch_info['example_metadata']:
-            request_id = meta['request_id']
-            status = result_status.get(request_id, ('missing', "Missing from batch output"))
-            idx = meta['example_index']
-            
-            if status[0] == 'success':
-                responses[idx] = status[1]
-            else:
-                # Handle both error and missing cases
-                error_msg = status[1]
-                logger.warning(f"Request failed for example {idx}: {error_msg}")
-                responses[idx] = ''  # Empty response for failed requests
-                
-    finally:
-        os.unlink(result_file)
-    
-    return responses
-
 # =============================================================================
 # UNIFIED EVALUATION FUNCTION
 # =============================================================================
 
-def evaluate_model(test_data, model, processor, model_name, mode_type, model_kwargs, batch_size=20):
+def evaluate_model(test_data, model, processor, model_name, mode_type, model_kwargs, batch_size=20, dataset_name='images'):
     """
     Unified model evaluation function for AI-generated image detection.
     
@@ -774,16 +591,20 @@ def evaluate_model(test_data, model, processor, model_name, mode_type, model_kwa
     build_prompts(test_data, mode_type, processor=processor, model_name=model_name)
     
     # Sort by image size (largest first) to minimize padding waste in batches
-    logger.info("Sorting examples by image size for efficient batching...")
-    def get_image_pixel_count(example):
-        """Get pixel count without loading full image data (fast metadata read)."""
-        try:
-            with Image.open(example['image']) as img:
-                return img.width * img.height
-        except Exception:
-            return 0  # Fallback for any file issues
-    
-    test_data.sort(key=get_image_pixel_count, reverse=True)  # Sort by image size
+    # Skip sorting for OpenAI models to avoid clustering large images in first batch
+    if model_name != 'o3':
+        logger.info("Sorting examples by image size for efficient batching...")
+        def get_image_pixel_count(example):
+            """Get pixel count without loading full image data (fast metadata read)."""
+            try:
+                with Image.open(example['image']) as img:
+                    return img.width * img.height
+            except Exception:
+                return 0  # Fallback for any file issues
+        
+        test_data.sort(key=get_image_pixel_count, reverse=True)  # Sort by image size
+    else:
+        logger.info("Skipping sorting for OpenAI model to ensure balanced batch sizes")
     
     # Progress bar
     pbar = tqdm(total=len(test_data), desc="Evaluating")
@@ -792,7 +613,7 @@ def evaluate_model(test_data, model, processor, model_name, mode_type, model_kwa
     # Calculate effective batch size
     num_return_sequences = model_kwargs.get('num_return_sequences', 1)
     if model_name == 'o3':
-        # O3: Process all examples in single batch for API efficiency
+        # O3: Process all examples in single batch, but handle chunking internally
         effective_batch_size = len(test_data)
     elif batch_size > num_return_sequences:
         effective_batch_size = batch_size // num_return_sequences
@@ -817,7 +638,7 @@ def evaluate_model(test_data, model, processor, model_name, mode_type, model_kwa
                 )
             elif model_name == 'o3':
                 responses = get_openai_responses(
-                    batch_examples, model_name, model_kwargs, mode_type, 'images'
+                    batch_examples, model_name, model_kwargs, mode_type, dataset_name
                 )
             else:
                 raise ValueError(f"Unsupported model: {model_name}")
@@ -925,7 +746,8 @@ def main():
             model_name=args.llm,
             mode_type=args.mode,
             model_kwargs=model_kwargs,
-            batch_size=args.batch_size
+            batch_size=args.batch_size,
+            dataset_name=args.dataset
         )
         
         final_f1_score = score['macro_f1']

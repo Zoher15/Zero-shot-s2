@@ -1072,9 +1072,9 @@ def update_macro_f1(score, pred_answer, ground_answer):
         else:  # ai-generated
             score['TP'] += 1
     else:
-        if ground_answer == 'real' and pred_answer == 'ai-generated':
+        if ground_answer == 'real':
             score['FP'] += 1
-        elif ground_answer == 'ai-generated' and pred_answer == 'real':
+        elif ground_answer == 'ai-generated':
             score['FN'] += 1
     
     score['n'] += 1

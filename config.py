@@ -205,11 +205,12 @@ SUPPORTED_DATASETS = [
 SUPPORTED_MODES = [
     "zeroshot", "zeroshot-cot", "zeroshot-2-artifacts", "zeroshot-3-artifacts",
     "zeroshot-4-artifacts", "zeroshot-5-artifacts", "zeroshot-6-artifacts",
-    "zeroshot-7-artifacts", "zeroshot-8-artifacts", "zeroshot-9-artifacts"
+    "zeroshot-7-artifacts", "zeroshot-8-artifacts", "zeroshot-9-artifacts",
+    "sys-cot", "sys-2-artifacts", "ques-cot", "ques-2-artifacts"
 ]
 
 SUPPORTED_MODELS = [
-    "llama3-11b", "llama3-90b", "qwen25-3b", "qwen25-7b", "qwen25-32b", "qwen25-72b", "code"
+    "llama3-11b", "llama3-90b", "qwen25-3b", "qwen25-7b", "qwen25-32b", "qwen25-72b", "code", "o3", "gpt-4.1"
 ]
 
 REASONING_PREFIXES = {

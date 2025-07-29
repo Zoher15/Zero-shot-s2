@@ -50,7 +50,7 @@ def parse_args_early():
     parser.add_argument("-llm", "--llm", type=str, required=True,
                        help="Model to evaluate",
                        choices=["qwen25-3b", "qwen25-7b", "qwen25-32b", "qwen25-72b",
-                               "llama3-11b", "llama3-90b", "code", "o3"])
+                               "llama3-11b", "llama3-90b", "code", "o3", "gpt-4.1"])
     
     # Evaluation parameters
     parser.add_argument("-m", "--mode", type=str, default="zeroshot-2-artifacts",
@@ -58,6 +58,7 @@ def parse_args_early():
                        choices=["zeroshot", "zeroshot-cot", "zeroshot-2-artifacts", "zeroshot-3-artifacts", 
                                "zeroshot-4-artifacts", "zeroshot-5-artifacts", "zeroshot-6-artifacts",
                                "zeroshot-7-artifacts", "zeroshot-8-artifacts", "zeroshot-9-artifacts", 
+                               "sys-cot", "sys-2-artifacts", "ques-cot", "ques-2-artifacts",
                                "direct_classification"])
     parser.add_argument("-d", "--dataset", type=str, default="df402k",
                        help="Dataset to evaluate (default: df402k)",
@@ -111,7 +112,7 @@ elif args.llm == 'code':
     import joblib
     import transformers
     from huggingface_hub import hf_hub_download
-elif args.llm == 'o3':
+elif args.llm in ['o3', 'gpt-4.1']:
     import os
     import time
     import json
@@ -339,7 +340,7 @@ def build_prompts(examples, mode_type, processor=None, model_name=None):
         format_type = "qwen"
     elif model_name.startswith('llama'):
         format_type = "llama"
-    elif model_name == 'o3':
+    elif model_name in ['o3', 'gpt-4.1']:
         format_type = "openai"
     else:
         raise ValueError(f"Unknown model format for: {model_name}")
@@ -350,6 +351,12 @@ def build_prompts(examples, mode_type, processor=None, model_name=None):
         # Build system message if instructions exist (common)
         if instructions_text != "":
             messages.append({"role": "system", "content": instructions_text})
+        
+        # Modify question in place for ques-* modes
+        if mode_type == "ques-cot":
+            example['question'] = f"{example['question']} Please think step by step."
+        elif mode_type == "ques-2-artifacts":
+            example['question'] = f"{example['question']} Please examine the style and the synthesis artifacts."
         
         # Build user message - content differs by format
         if format_type == "llama":
@@ -592,7 +599,7 @@ def evaluate_model(test_data, model, processor, model_name, mode_type, model_kwa
     
     # Sort by image size (largest first) to minimize padding waste in batches
     # Skip sorting for OpenAI models to avoid clustering large images in first batch
-    if model_name != 'o3':
+    if model_name not in ['o3', 'gpt-4.1']:
         logger.info("Sorting examples by image size for efficient batching...")
         def get_image_pixel_count(example):
             """Get pixel count without loading full image data (fast metadata read)."""
@@ -612,8 +619,8 @@ def evaluate_model(test_data, model, processor, model_name, mode_type, model_kwa
 
     # Calculate effective batch size
     num_return_sequences = model_kwargs.get('num_return_sequences', 1)
-    if model_name == 'o3':
-        # O3: Process all examples in single batch, but handle chunking internally
+    if model_name in ['o3', 'gpt-4.1']:
+        # OpenAI models: Process all examples in single batch, but handle chunking internally
         effective_batch_size = len(test_data)
     elif batch_size > num_return_sequences:
         effective_batch_size = batch_size // num_return_sequences
@@ -636,7 +643,7 @@ def evaluate_model(test_data, model, processor, model_name, mode_type, model_kwa
                 responses = generate_code_responses(
                     model, processor, batch_examples, mode_type, model_kwargs
                 )
-            elif model_name == 'o3':
+            elif model_name in ['o3', 'gpt-4.1']:
                 responses = get_openai_responses(
                     batch_examples, model_name, model_kwargs, mode_type, dataset_name
                 )
@@ -723,8 +730,8 @@ def main():
             model, processor = load_llama_model(args.llm)
         elif args.llm == 'code':
             model, processor = load_code_model()
-        elif args.llm == 'o3':
-            model, processor = None, None  # O3 doesn't need local model loading
+        elif args.llm in ['o3', 'gpt-4.1']:
+            model, processor = None, None  # OpenAI models don't need local model loading
         else:
             raise ValueError(f"Unsupported model: {args.llm}")
         

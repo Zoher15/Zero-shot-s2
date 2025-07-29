@@ -223,13 +223,14 @@ def setup_group_directory_pure(data: BatchData) -> BatchData:
     """Setup group directory with datetime naming, checking for existing directories first."""
     dataset_name = data.metadata.get('dataset_name', 'images')
     mode_type = data.metadata.get('mode_type', 'zeroshot')
+    model_name = data.metadata.get('model_name', 'o3')
     num_examples = len(data.examples)
     
     batches_dir = Path(config.OUTPUTS_DIR) / 'batches'
     
     # Look for existing directories matching this configuration
     if batches_dir.exists():
-        pattern = f"o3_group_{dataset_name}_{mode_type}_{num_examples}_*"
+        pattern = f"{model_name}_group_{dataset_name}_{mode_type}_{num_examples}_*"
         existing_dirs = list(batches_dir.glob(pattern))
         logger.info(f"Searching for pattern: {pattern}")
         logger.info(f"Found {len(existing_dirs)} matching directories: {[d.name for d in existing_dirs]}")
@@ -261,7 +262,7 @@ def setup_group_directory_pure(data: BatchData) -> BatchData:
     # No existing directory found, create new one
     current_datetime = datetime.now()
     group_name = current_datetime.strftime("%Y%m%d_%H%M%S")
-    group_dir = batches_dir / f"o3_group_{dataset_name}_{mode_type}_{num_examples}_{group_name}"
+    group_dir = batches_dir / f"{model_name}_group_{dataset_name}_{mode_type}_{num_examples}_{group_name}"
     
     return data.with_group_dir(group_dir).with_metadata(
         group_name=group_name,
@@ -303,7 +304,7 @@ def create_group_directory_pure(data: BatchData) -> BatchData:
     if overwrite or not data.group_dir.exists():
         data.group_dir.mkdir(parents=True, exist_ok=True)
         readable_datetime = data.metadata['current_datetime'].strftime("%B %d, %Y at %H:%M:%S")
-        logger.info(f"Created O3 group directory: {readable_datetime} ({data.metadata['group_name']})")
+        logger.info(f"Created {data.metadata.get('model_name', 'OpenAI')} group directory: {readable_datetime} ({data.metadata['group_name']})")
     
     return data
 
@@ -319,7 +320,7 @@ def validate_chunk_sizes_pure(data: BatchData) -> BatchData:
         chunk_examples = chunk_info['chunk_examples']
         
         # Create batch requests for validation
-        batch_requests, _ = create_batch_requests_for_chunk_pure(chunk_id, chunk_examples, model_kwargs)
+        batch_requests, _ = create_batch_requests_for_chunk_pure(chunk_id, chunk_examples, model_kwargs, data.metadata.get('model_name', 'o3'))
         
         # Measure size
         temp_file = create_temp_jsonl_file(batch_requests)
@@ -371,7 +372,7 @@ Recommended: Try chunk_size = {max(100, data.config.chunk_size // 2)}
     logger.info(f"✅ All {len(data.chunks)} chunks are under {data.config.max_size_mb}MB limit")
     return data
 
-def create_batch_requests_for_chunk_pure(chunk_id, chunk_examples, model_kwargs):
+def create_batch_requests_for_chunk_pure(chunk_id, chunk_examples, model_kwargs, model_name):
     """Pure function to create batch requests for a chunk."""
     batch_requests = []
     example_metadata = []
@@ -380,21 +381,37 @@ def create_batch_requests_for_chunk_pure(chunk_id, chunk_examples, model_kwargs)
     for i, example in enumerate(chunk_examples):
         request_id = f"req_{chunk_id}_{timestamp}_{i:06d}"
         
-        request_body = {
-            "model": "o3",
-            "input": example['messages'],
-            "reasoning": {"effort": "high", "summary": "detailed"}
-        }
+        if model_name == 'o3':
+            # O3 uses reasoning API format
+            request_body = {
+                "model": "o3",
+                "input": example['messages'],
+                "reasoning": {"effort": "high", "summary": "detailed"}
+            }
+        elif model_name == 'gpt-4.1':
+            # GPT-4.1 also uses reasoning API format
+            request_body = {
+                "model": "gpt-4.1-2025-04-14",
+                "input": example['messages']
+            }
+        else:
+            raise ValueError(f"Unsupported OpenAI model: {model_name}")
         
-        if 'temperature' in model_kwargs:
+        # Both models use the same endpoint
+        endpoint = "/v1/responses"
+        
+        # Add model-specific parameters
+        if 'temperature' in model_kwargs and model_name == 'o3':
             request_body['temperature'] = model_kwargs['temperature']
-        if 'top_p' in model_kwargs:
+        if 'top_p' in model_kwargs and model_name == 'o3':
             request_body['top_p'] = model_kwargs['top_p']
+        if 'max_tokens' in model_kwargs and model_name == 'gpt-4.1':
+            request_body['max_tokens'] = model_kwargs['max_tokens']
         
         batch_requests.append({
             "custom_id": request_id,
             "method": "POST", 
-            "url": "/v1/responses",
+            "url": endpoint,
             "body": request_body
         })
         
@@ -419,16 +436,20 @@ def submit_chunks_pure(data: BatchData) -> BatchData:
         chunk_examples = chunk_info['chunk_examples']
         
         # Create and submit batch
-        batch_requests, example_metadata = create_batch_requests_for_chunk_pure(chunk_id, chunk_examples, model_kwargs)
+        batch_requests, example_metadata = create_batch_requests_for_chunk_pure(chunk_id, chunk_examples, model_kwargs, data.metadata.get('model_name', 'o3'))
         temp_file = create_temp_jsonl_file(batch_requests)
         
         try:
             with open(temp_file, 'rb') as f:
                 file_id = openai_client.files.create(file=f, purpose='batch').id
             
+            # Determine endpoint based on model
+            model_name = data.metadata.get('model_name', 'o3')
+            endpoint = "/v1/responses"  # Both O3 and GPT-4.1 use reasoning API
+            
             batch_response = openai_client.batches.create(
                 input_file_id=file_id,
-                endpoint="/v1/responses",
+                endpoint=endpoint,
                 completion_window=data.config.completion_window
             )
             
@@ -601,7 +622,8 @@ def process_with_deepseek_pure(data: BatchData) -> BatchData:
                         continue
                         
                     response_body = result['response']['body']
-                    intermediate_response = parse_o3_response_pure(response_body)
+                    model_name = data.metadata.get('model_name', 'o3')
+                    intermediate_response = parse_openai_response_pure(response_body, model_name)
                     
                     chunk_requests.append((int(chunk_id), example_index, intermediate_response))
             
@@ -701,23 +723,37 @@ def process_with_deepseek_pure(data: BatchData) -> BatchData:
     logger.info(f"Final responses saved: {final_responses_file}")
     return data.with_responses(final_responses_ordered)
 
-def parse_o3_response_pure(response_body):
-    """Parse O3 response format to extract reasoning and answer."""
-    reasoning, answer = '', ''
-    
-    for output_item in response_body.get('output', []):
-        if output_item.get('type') == 'reasoning':
-            summary_texts = []
-            for item in output_item.get('summary', []):
-                if isinstance(item, dict) and 'text' in item:
-                    summary_texts.append(item['text'])
-                elif hasattr(item, 'text'):
-                    summary_texts.append(item.text)
-            reasoning = '\n\n'.join(summary_texts)
-        elif output_item.get('type') == 'message':
-            answer = next((item.get('text', '') for item in output_item.get('content', []) if item.get('type') == 'output_text'), '')
-    
-    return f"{reasoning}\n\n{answer}" if reasoning else answer
+def parse_openai_response_pure(response_body, model_name):
+    """Parse OpenAI response format to extract reasoning and answer."""
+    if model_name == 'o3':
+        # O3 reasoning API format
+        reasoning, answer = '', ''
+        
+        for output_item in response_body.get('output', []):
+            if output_item.get('type') == 'reasoning':
+                summary_texts = []
+                for item in output_item.get('summary', []):
+                    if isinstance(item, dict) and 'text' in item:
+                        summary_texts.append(item['text'])
+                    elif hasattr(item, 'text'):
+                        summary_texts.append(item.text)
+                reasoning = '\n\n'.join(summary_texts)
+            elif output_item.get('type') == 'message':
+                answer = next((item.get('text', '') for item in output_item.get('content', []) if item.get('type') == 'output_text'), '')
+        
+        return f"{reasoning}\n\n{answer}" if reasoning else answer
+        
+    elif model_name == 'gpt-4.1':
+        # GPT-4.1 also uses reasoning API format (same as O3 but without detailed reasoning)
+        answer = ''
+        
+        for output_item in response_body.get('output', []):
+            if output_item.get('type') == 'message':
+                answer = next((item.get('text', '') for item in output_item.get('content', []) if item.get('type') == 'output_text'), '')
+        
+        return answer
+    else:
+        raise ValueError(f"Unsupported model for response parsing: {model_name}")
 
 def read_minimal_tracker(group_dir: Path):
     """Read minimal batch tracking info."""
@@ -847,22 +883,21 @@ def flatten_responses_pure(data: BatchData) -> List[str]:
 
 def get_openai_responses(batch_examples, model_name, model_kwargs, mode_type, dataset_name='images'):
     """
-    Generate responses using OpenAI O3 batch API with functional pipeline architecture.
+    Generate responses using OpenAI batch API with functional pipeline architecture.
     
     Args:
         batch_examples: List of examples with 'messages' keys
-        model_name: OpenAI model name ('o3')
+        model_name: OpenAI model name ('o3', 'gpt-4.1')
         model_kwargs: Model generation parameters 
-        mode_type: Evaluation mode (forced to 'zeroshot' for O3)
+        mode_type: Evaluation mode 
         dataset_name: Dataset identifier for batch tracking
         
     Returns:
-        List of response strings from O3 model (flattened from all chunks)
+        List of response strings from OpenAI model (flattened from all chunks)
     """
-    # O3 supports all modes since prompts are built in evaluate_images.py
-    # No need to force zeroshot mode
+    # Both O3 and GPT-4.1 support all modes since prompts are built in evaluate_images.py
     
-    logger.info(f"Starting O3 batch evaluation for {len(batch_examples)} examples")
+    logger.info(f"Starting {model_name} batch evaluation for {len(batch_examples)} examples")
     
     # Create initial data structure
     config_obj = BatchConfig()

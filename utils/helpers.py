@@ -518,6 +518,8 @@ def get_instructions_for_mode(mode_type: str) -> str:
     instructions_map = {
         # Add any mode-specific system instructions here if needed
         # "special-mode": "You are an expert in...",
+        "sys-cot": "Think step by step before answering the question.",
+        "sys-2-artifacts": "Examine the style and the synthesis artifacts before answering the question.",
     }
     
     return instructions_map.get(mode_type, "")

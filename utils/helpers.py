@@ -1355,11 +1355,9 @@ def get_pred_answers(
 
     for r in full_responses:
         # Extract the answer and the rationale (legacy logic)
-        if answer_phrase in r:        
-            rationale = r.split(answer_phrase)[0].strip()
+        if answer_phrase in r:
             pred = r.split(answer_phrase)[1].strip()
         else:
-            rationale = ""
             pred = r.strip()
         
         # Extract the answer (legacy regex logic)
@@ -1370,7 +1368,7 @@ def get_pred_answers(
         
         # Append the prediction
         pred_answers.append(pred)
-        rationales.append(rationale)
+        rationales.append(r)
     
     # Set the greedy most common prediction (legacy logic)
     pred_answer = Counter(pred_answers).most_common(1)[0][0]

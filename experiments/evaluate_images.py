@@ -433,6 +433,8 @@ def get_responses(model, processor, batch_examples, model_name, model_kwargs, an
     1. First generation: Generate reasoning/analysis based on the prompt
     2. Second generation: Generate the final answer after the reasoning
     
+    Includes CUDA OOM handling with automatic batch size reduction.
+    
     Args:
         model: The loaded model for text generation
         processor: Model processor 
@@ -444,74 +446,93 @@ def get_responses(model, processor, batch_examples, model_name, model_kwargs, an
     Returns:
         List of complete response strings combining reasoning and final responses
     """
-    try:
-        model_kwargs_copy = model_kwargs.copy()
-        
-        # Handle num_return_sequences by duplicating prompts and examples
-        if 'top_k_beams' in model_kwargs_copy:
-            k = model_kwargs_copy.pop('top_k_beams')
-        elif 'num_return_sequences' in model_kwargs_copy:
-            k = model_kwargs_copy.pop('num_return_sequences')
-        else:
-            k = 1
-
-        # Prepare examples for self-consistency
-        if k > 1:
-            # Self-consistency mode: duplicate each example k times
-            batch_examples_expanded = []
-            for example in batch_examples:
-                batch_examples_expanded.extend([example] * k)
-        else:
-            # Regular batch mode
-            batch_examples_expanded = batch_examples
-        
-        # Extract prompts from expanded examples
-        first_prompts = [example['prompt'] for example in batch_examples_expanded]
+    def process_two_stage_batch(examples):
+        """Process a batch with two-stage generation."""
+        # Extract prompts from examples
+        first_prompts = [example['prompt'] for example in examples]
         
         # ===== FIRST STAGE: REASONING GENERATION =====
-        
-        # Unified extra args
-        extra_args = {
-            "return_dict_in_generate": True,
-            "output_scores": True,
-            "use_cache": True,
-        }
-        
-        # First generation
         first_responses = process_model_batch(
             model, processor, first_prompts, 
             model_kwargs_copy, extra_args, model_name, 
-            batch_examples_expanded
+            examples
         )
         
         # ===== SECOND STAGE: ANSWER GENERATION =====
-        
-        # Prepare second generation prompts (like zero_shot_mod)
-        second_prompts = [f"{example['prompt']}{first_response}\n\n{answer_phrase}" for example, first_response in zip(batch_examples_expanded, first_responses)]
+        # Prepare second generation prompts
+        second_prompts = [f"{example['prompt']}{first_response}\n\n{answer_phrase}" for example, first_response in zip(examples, first_responses)]
         
         # Second generation with reduced max tokens for faster inference  
-        model_kwargs_copy['max_new_tokens'] = 50
+        model_kwargs_second = model_kwargs_copy.copy()
+        model_kwargs_second['max_new_tokens'] = 50
         
-        # Second generation
         second_responses = process_model_batch(
             model, processor, second_prompts, 
-            model_kwargs_copy, extra_args, model_name, 
-            batch_examples_expanded
+            model_kwargs_second, extra_args, model_name, 
+            examples
         )
         
-        # Combine first and second responses (like zero_shot_mod)
-        full_responses = [f"{first_response}\n\n{answer_phrase}{second_response}" for first_response, second_response in zip(first_responses, second_responses)]
+        # Combine first and second responses
+        return [f"{first_response}\n\n{answer_phrase}{second_response}" for first_response, second_response in zip(first_responses, second_responses)]
+
+    model_kwargs_copy = model_kwargs.copy()
+    
+    # Handle num_return_sequences by duplicating prompts and examples
+    if 'top_k_beams' in model_kwargs_copy:
+        k = model_kwargs_copy.pop('top_k_beams')
+    elif 'num_return_sequences' in model_kwargs_copy:
+        k = model_kwargs_copy.pop('num_return_sequences')
+    else:
+        k = 1
+
+    # Prepare examples for self-consistency
+    if k > 1:
+        # Self-consistency mode: duplicate each example k times
+        batch_examples_expanded = []
+        for example in batch_examples:
+            batch_examples_expanded.extend([example] * k)
+    else:
+        # Regular batch mode
+        batch_examples_expanded = batch_examples
+    
+    # Unified extra args
+    extra_args = {
+        "return_dict_in_generate": True,
+        "output_scores": True,
+        "use_cache": True,
+    }
+    
+    # CUDA OOM retry logic
+    batch_size = len(batch_examples_expanded)
+    current_batch_size = batch_size
+    
+    while current_batch_size >= 1:
+        try:
+            # Process all examples in smaller sub-batches if needed
+            all_responses = []
+            
+            for i in range(0, len(batch_examples_expanded), current_batch_size):
+                sub_examples = batch_examples_expanded[i:i + current_batch_size]
+                responses = process_two_stage_batch(sub_examples)
+                all_responses.extend(responses)
+            
+            if current_batch_size < batch_size:
+                logger.info(f"CUDA OOM recovered: reduced batch size from {batch_size} to {current_batch_size}")
+            
+            return all_responses
+            
+        except helpers.CudaOOMError:
+            if current_batch_size == 1:
+                logger.error(f"CUDA OOM: Cannot reduce batch size below 1")
+                raise
+            
+            current_batch_size = max(1, current_batch_size // 2)
+            logger.warning(f"CUDA OOM: Retrying with batch size {current_batch_size}")
+            
+            # Clear memory before retry
+            if torch.cuda.is_available():
+                torch.cuda.empty_cache()
         
-        return full_responses
-        
-    except Exception as e:
-        # Check if it's a CUDA OOM error specifically
-        if "CUDA out of memory" in str(e) or "OutOfMemoryError" in str(e):
-            logger.error(f"CUDA OOM during response generation for {model_name}: {e}")
-            raise helpers.CudaOOMError(f"CUDA out of memory: {e}")
-        else:
-            logger.error(f"Error in model processing: {e}")
-            raise
 
 
 def generate_code_responses(model, processor, batch_examples, mode_type, model_kwargs, answer_phrase=None):

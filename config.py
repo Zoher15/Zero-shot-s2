@@ -53,6 +53,13 @@ GENIMAGE_DIR = Path("/data3/singhdan/genimage/")
 GENIMAGE_10K_CSV_FILE = DATA_DIR / "genimage" / "10k_random_sample.csv"  # Full 10k sample
 GENIMAGE_2K_CSV_FILE = DATA_DIR / "genimage" / "2k_random_sample.csv"    # Reduced 2k sample
 
+# --- FluxDALL Dataset Configuration ---
+# Directory containing FluxDALL dataset with generator subdirectories
+FLUXDALL_DIR = Path("/data3/singhdan/AI-GenBench-fake_part/")
+# CSV files with image paths and labels for different sample sizes
+FLUXDALL_10K_CSV_FILE = DATA_DIR / "fluxdall" / "10k_random_sample.csv"  # Full 10k sample
+FLUXDALL_2K_CSV_FILE = DATA_DIR / "fluxdall" / "2k_random_sample.csv"    # Reduced 2k sample
+
 # =============================================================================
 # OUTPUT DATA DIRECTORIES
 # =============================================================================
@@ -199,7 +206,7 @@ def get_filename(file_type, dataset, model, mode, num_seq=1, **custom_params):
 # =============================================================================
 
 SUPPORTED_DATASETS = [
-    "genimage2k", "genimage10k", "df402k", "df4010k", "d32k", "d37k"
+    "genimage2k", "genimage10k", "df402k", "df4010k", "d32k", "d37k", "fluxdall2k", "fluxdall10k"
 ]
 
 SUPPORTED_MODES = [

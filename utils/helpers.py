@@ -555,6 +555,10 @@ def load_dataset_examples(dataset_arg_val: str, question_str: str, config_module
             dataset_type = 'genimage'
             csv_file_path = config_module.GENIMAGE_2K_CSV_FILE if '2k' in dataset_arg_val else config_module.GENIMAGE_10K_CSV_FILE
             image_base_dir = config_module.GENIMAGE_DIR
+        elif 'fluxdall' in dataset_arg_val:
+            dataset_type = 'fluxdall'
+            csv_file_path = config_module.FLUXDALL_2K_CSV_FILE if '2k' in dataset_arg_val else config_module.FLUXDALL_10K_CSV_FILE
+            image_base_dir = config_module.FLUXDALL_DIR
         elif 'd3' in dataset_arg_val:
             dataset_type = 'd3'
             csv_file_path = config_module.D3_2K_CSV_FILE if 'd32k' in dataset_arg_val else config_module.D3_7K_CSV_FILE
@@ -578,14 +582,10 @@ def load_dataset_examples(dataset_arg_val: str, question_str: str, config_module
                 # D3 CSV contains full paths and standardized answers
                 image_path = row['image']
                 answer = row['answer']
-            elif dataset_type == 'genimage':
-                # GenImage CSV contains relative paths and dataset column
+            elif dataset_type in ['genimage', 'fluxdall', 'df40']:
+                # Standardized CSV format: relative img_path and dataset columns
                 image_path = str(image_base_dir / row['img_path'])
                 answer = 'real' if str(row['dataset']).lower() == 'real' else 'ai-generated'
-            elif dataset_type == 'df40':
-                # DF40 CSV contains relative paths and label column
-                image_path = str(image_base_dir / row['file_path'])
-                answer = 'real' if str(row['label']).lower() == 'real' else 'ai-generated'
                 
             examples.append({
                 'image': image_path,

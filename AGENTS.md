@@ -241,7 +241,7 @@ main()
 
 ### **1. Processor-Based Architecture**
 - All models use `AutoProcessor.apply_chat_template()`
-- Unified code path for Qwen2.5-VL, LLaVA-OneVision, Llama-3.2-Vision
+- Unified code path for Qwen2.5-VL, LLaVA-OneVision, Qwen3-VL
 - Simple append mode for prefill
 
 ### **2. Single LLM Engine Initialization**
@@ -401,10 +401,10 @@ python evaluate.py --model qwen25-vl-7b --dataset df40 --phrase baseline
 python evaluate.py --model qwen25-vl-7b --dataset df40 --phrase cot
 
 # Prefill-pseudo-system mode: System instruction to start with phrase
-python evaluate.py --model llama32-vision-11b --dataset genimage --phrase cot --mode prefill-pseudo-system
+python evaluate.py --model qwen3-vl-8b --dataset genimage --phrase cot --mode prefill-pseudo-system
 
 # Prefill-pseudo-user mode: User instruction to start with phrase
-python evaluate.py --model llama32-vision-11b --dataset genimage --phrase cot --mode prefill-pseudo-user
+python evaluate.py --model qwen3-vl-8b --dataset genimage --phrase cot --mode prefill-pseudo-user
 
 # Prompt mode: Append instruction to question
 python evaluate.py --model llava-onevision-7b --dataset d3 --phrase cot --mode prompt
@@ -419,7 +419,7 @@ python evaluate.py --model qwen25-vl-7b --dataset df40 --phrase cot --mode instr
 python evaluate.py --model qwen25-vl-7b --dataset genimage-2k --phrase cot --n 5
 
 # Generate 10 responses per input
-python evaluate.py --model llama32-vision-11b --dataset df40-2k --phrase s2 --n 10
+python evaluate.py --model qwen3-vl-8b --dataset df40-2k --phrase s2 --n 10
 
 # Generate 20 responses per input with prompt mode
 python evaluate.py --model qwen25-vl-7b --dataset d3-2k --phrase cot --mode prompt --n 20
@@ -437,7 +437,7 @@ python evaluate.py --model qwen25-vl-7b --dataset df40 --phrase cot --n 5 --debu
 ### **Multi-GPU Setup**
 ```bash
 # Use specific GPU devices
-python evaluate.py --model llama32-vision-11b --dataset genimage --phrase s2 --cuda "0,1"
+python evaluate.py --model qwen3-vl-8b --dataset genimage --phrase s2 --cuda "0,1"
 ```
 
 ### **Override Existing Results**
@@ -459,7 +459,7 @@ python evaluate.py --model qwen25-vl-7b --dataset df40 --phrase cot --override
 ```
 output/
   {dataset}/           # e.g., df40, d3, genimage
-    {model}/           # e.g., qwen25-vl-7b, llama32-vision-11b
+    {model}/           # e.g., qwen25-vl-7b, qwen3-vl-8b
       baseline/        # Special: no mode subdirectory for baseline
         reasoning_YYYYMMDD_HHMMSS.json       # n=1 (default)
         performance_YYYYMMDD_HHMMSS.json
@@ -500,7 +500,7 @@ logs/
 - `output/df40/qwen25-vl-7b/baseline/n=5/performance_20250130_143022.json` (n=5)
 - `output/df40/qwen25-vl-7b/cot/prefill/reasoning_20250130_143022.json` (n=1)
 - `output/df40/qwen25-vl-7b/cot/prefill/n=10/reasoning_20250130_143022.json` (n=10)
-- `output/genimage/llama32-vision-11b/s2/prompt/n=5/performance_20250130_143022.json` (n=5)
+- `output/genimage/qwen3-vl-8b/s2/prompt/n=5/performance_20250130_143022.json` (n=5)
 - `logs/df40/qwen25-vl-7b/cot/instruct/n=5/evaluation_20250130_143022.log` (n=5)
 
 ### **Reasoning Traces JSON (n=1)**
@@ -598,7 +598,7 @@ logs/
 ### **Performance Metrics JSON (n=5)**
 ```json
 {
-  "model": "llama32-vision-11b",
+  "model": "qwen3-vl-8b",
   "dataset": "genimage-2k",
   "phrase": "s2",
   "mode": "prefill",
@@ -634,13 +634,18 @@ VLM_MODELS = {
         'prefill_mode': 'append'
     },
     'llava-onevision-7b': {
-        'hf_path': "llava-hf/llava-onevision-qwen2-7b-si-hf",
+        'hf_path': "llava-hf/llava-onevision-qwen2-7b-ov-chat-hf",
         'prefill_mode': 'append'
     },
-    'llama32-vision-11b': {
-        'hf_path': "meta-llama/Llama-3.2-11B-Vision-Instruct",
+    'qwen3-vl-8b': {
+        'hf_path': "Qwen/Qwen3-VL-8B-Instruct",
         'prefill_mode': 'append',
-        'max_num_seqs': 100  # Required for 6404 image tokens
+        'stage1_max_tokens': 1024
+    },
+    'qwen3-vl-8b-thinking': {
+        'hf_path': "Qwen/Qwen3-VL-8B-Thinking",
+        'prefill_mode': 'append',
+        'stage1_max_tokens': 4096
     }
 }
 ```
@@ -751,7 +756,7 @@ GRID_COLOR = 'gray'
 GRID_LINESTYLE = '--'
 
 # Model/Dataset/Method Mappings
-MODEL_NAMES = {'qwen25-vl-7b': 'Qwen', 'llava-onevision-7b': 'LLaVa', ...}
+MODEL_NAMES = {'qwen25-vl-7b': 'Qwen2.5', 'llava-onevision-7b': 'LLaVA', 'qwen3-vl-8b': 'Qwen3'}
 DATASET_NAMES = {'d3': 'D3', 'df40': 'DF40', 'genimage': 'GenImage'}
 METHOD_NAMES = {'baseline': 'Baseline', 'cot': 'CoT', 's2': 'S2'}
 
@@ -765,7 +770,7 @@ def set_publication_style():
 **1. Macro F1 Bar Chart** (`plot_macro_f1_bars.py`)
 - 3 subplots (D3, DF40, GenImage)
 - Grouped bars: 3 models × 3 methods
-- Error bars from confidence.json
+- Optional error bars from `confidence.json` when bootstrap CIs have been generated
 - Improvement markers (S2 vs CoT)
 
 **2. Recall Radar Plot** (`plot_recall_radar.py`)

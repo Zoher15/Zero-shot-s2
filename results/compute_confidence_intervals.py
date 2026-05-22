@@ -48,7 +48,7 @@ OVERRIDE = False
 # Combinations to compute CIs for
 # Modify these lists to compute CIs for specific configurations
 DATASETS = ['d3', 'df40', 'genimage']  # Datasets to process
-MODELS = ['llava-onevision-7b', 'qwen25-vl-7b', 'llama32-vision-11b']  # Models to process
+MODELS = ['llava-onevision-7b', 'qwen25-vl-7b', 'qwen3-vl-8b']  # Models to process
 PHRASES = ['baseline', 'cot', 's2']  # Phrases to process
 MODES = ['prefill']  # Phrase modes to process
 N_VALUES = [1]  # n values to process

@@ -5,9 +5,9 @@ This module contains all configuration registries, constants, and configuration
 management functions for the zero-shot prompting evaluation system.
 
 Features:
-- VLM model configurations (Qwen2.5-VL, LLaVA-OneVision, Llama-3.2-Vision)
+- VLM model configurations (Qwen2.5-VL, LLaVA-OneVision, Qwen3-VL)
 - Dataset configurations with paths and metadata
-- Prefill configurations for different prompting strategies
+- Phrase configurations for different prompting strategies
 - Validation and getter functions
 """
 
@@ -15,7 +15,7 @@ from pathlib import Path
 from typing import Dict, Any
 
 # =============================================================================
-# PROJECT PATHSs
+# PROJECT PATHS
 # =============================================================================
 
 PROJECT_ROOT = Path(__file__).resolve().parent
@@ -178,7 +178,7 @@ def get_model_config(model_name: str) -> Dict[str, Any]:
     Get model configuration by name.
 
     Args:
-        model_name: Name of the model (e.g., 'qwen25-vl-7b', 'llama32-vision-11b')
+        model_name: Name of the model (e.g., 'qwen25-vl-7b', 'qwen3-vl-8b')
 
     Returns:
         Dictionary containing model configuration

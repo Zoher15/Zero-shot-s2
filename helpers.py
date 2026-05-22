@@ -179,7 +179,7 @@ def _build_single_prompt(example: Dict[str, Any], phrase_text: str, model_name: 
                 {"type": "image", "image": example['image']},
                 {"type": "text", "text": user_text}
             ]
-        elif model_config['hf_path'].startswith('llava-hf') or model_config['hf_path'].startswith('meta-llama'):
+        elif model_config['hf_path'].startswith('llava-hf'):
             content = [
                 {"type": "image"},
                 {"type": "text", "text": user_text}

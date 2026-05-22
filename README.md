@@ -86,9 +86,9 @@ We evaluate on three diverse benchmarks:
 
 - **Qwen2.5-VL-7B** — Dynamic-resolution Vision Transformer
 - **LLaVA-OneVision-7B** — Multimodal instruction-following model
-- **Llama-3.2-Vision-11B** — Vision adapter + Llama 3.1 LM
+- **Qwen3-VL-8B** — Current Qwen vision-language model, with Instruct and Thinking configs
 
-All models use instruction-tuned variants via vLLM for efficient inference.
+All model configs run through vLLM for efficient inference.
 
 ---
 
@@ -110,13 +110,9 @@ All models use instruction-tuned variants via vLLM for efficient inference.
   <img src="images/macro_f1_bars.png" alt="Macro F1 performance comparison" width="900"/>
 </p>
 
-**Detection Macro F1 across models, datasets, and PGT variations.** Bars show relative improvement of S2 over the next best method, with 95% confidence intervals from 10k bootstrap iterations.
+**Detection Macro F1 across models, datasets, and PGT variations.** Bars show relative improvement of S2 over the next best method.
 
-<p align="center">
-  <img src="images/recall_radar_llama.png" alt="Per-generator recall for Llama" width="900"/>
-</p>
-
-**Detection recall (%) for Llama on each dataset, broken down by generator.** Similar figures for LLaVA and Qwen in the paper.
+Per-generator recall figures used in the COLM paper are generated under `results/figures/` by the plotting scripts in `results/`.
 
 ### Interpretability: Confidence Progression
 

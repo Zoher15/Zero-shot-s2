@@ -18,7 +18,7 @@ Outputs:
 
 Usage:
     python add_class_probs_to_reasoning.py --model qwen25-vl-7b --dataset df40 --phrase cot
-    python add_class_probs_to_reasoning.py --model llama32-vision-11b --dataset genimage --phrase cot --mode prompt
+    python add_class_probs_to_reasoning.py --model qwen3-vl-8b --dataset genimage --phrase cot --mode prompt
 """
 
 import argparse

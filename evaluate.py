@@ -6,14 +6,14 @@ Clean, functional evaluation script for testing VLM models on AI-generated
 image detection using two-stage prompting with prefill strategies.
 
 Features:
-- Three VLM models: Qwen2.5-VL, LLaVA-OneVision, Llama-3.2-Vision
-- Four prefill modes: direct, pseudo, prompt, instruct
+- VLM models: Qwen2.5-VL, LLaVA-OneVision, Qwen3-VL
+- Five phrase modes: prefill, pseudo-system, pseudo-user, prompt, instruct
 - Two-stage evaluation: reasoning generation + clean answer extraction
 - Comprehensive metrics with reasoning trace storage
 
 Usage:
     python evaluate.py --model qwen25-vl-7b --dataset df40 --phrase cot
-    python evaluate.py --model llama32-vision-11b --dataset genimage --phrase cot --mode prefill-pseudo
+    python evaluate.py --model qwen3-vl-8b --dataset genimage --phrase cot --mode prefill-pseudo-system
     python evaluate.py --model llava-onevision-7b --dataset d3 --phrase cot --mode prompt
     python evaluate.py --model qwen25-vl-7b --dataset df40 --phrase cot --mode instruct
 """
@@ -48,7 +48,7 @@ def parse_arguments() -> argparse.Namespace:
     parser.add_argument('--model', '-m', type=str, required=True, choices=config.get_supported_models(), help='VLM model to evaluate')
     parser.add_argument('--dataset', '-d', type=str, required=True, choices=config.get_supported_datasets(), help='Dataset to evaluate on')
     parser.add_argument('--phrase', '-p', type=str, required=True, choices=config.get_supported_phrases(), help='Phrase to use (e.g., cot, artifacts)')
-    parser.add_argument('--mode', type=str, default=None, choices=config.PHRASE_MODES, help='Mode: prefill (append after template), prefill-pseudo-system (system: start with X), prefill-pseudo-user (user: start with X), prompt (append to question), instruct (system: X). Ignored for baseline phrase.')
+    parser.add_argument('--mode', type=str, default='prefill', choices=config.PHRASE_MODES, help='Mode: prefill (append after template), prefill-pseudo-system (system: start with X), prefill-pseudo-user (user: start with X), prompt (append to question), instruct (system: X). Ignored for baseline phrase.')
     parser.add_argument('--output-dir', '-o', type=str, default=None, help='Output directory (default: output/{model_name})')
     parser.add_argument('--cuda', type=str, default='0', help='CUDA device IDs for VLLM (e.g., "0,1")')
     parser.add_argument('--n', type=int, default=1, help='Number of responses to generate per input (default: 1)')

@@ -3,7 +3,7 @@ Generate LaTeX table for macro F1 scores across datasets and phrase modes.
 
 Creates a publication-ready table with:
 - Nested rows for phrases (baseline, cot, s2)
-- Different modes (prefill, prefill-pseudo-user, prefill-pseudo-system, prompt)
+- Different modes (prefill, prefill-pseudo-system, prompt)
 - Performance deltas (+/-) relative to prefill baseline
 - Macro F1 scores formatted to 1 decimal place
 """
@@ -46,7 +46,7 @@ MODE_DISPLAY_NAMES = {
 }
 
 # Models to generate tables for
-MODELS = ['qwen25-vl-7b', 'llama32-vision-11b', 'llava-onevision-7b']
+MODELS = pc.MODEL_ORDER
 
 # Output directory
 TABLES_DIR = Path(__file__).resolve().parent / "tables"

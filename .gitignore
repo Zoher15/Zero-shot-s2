@@ -12,9 +12,12 @@ results/vocab_lr_per_model/
 *.json
 *.log
 *.pkl
-pgt_jobs.txt
-analysis_jobs.txt
+*.zip
+*_jobs.txt
+pip_freeze*.txt
+requirements_backup_*.txt
+results/*.csv
+results/*.txt
 misc/
 CLAUDE.md
-results/aggregate_margins.csv
-results/aggregate_margins.txt
+midjourney_s2_prefill_successes.md

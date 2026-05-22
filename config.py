@@ -27,8 +27,8 @@ LOGS_DIR = PROJECT_ROOT / "logs"
 # DATASET IMAGE DIRECTORIES
 # =============================================================================
 
-DF40_IMAGE_DIR = Path("/data3/singhdan/DF40/")
-GENIMAGE_IMAGE_DIR = Path("/data3/singhdan/genimage/")
+DF40_IMAGE_DIR = Path("/data/df40/")
+GENIMAGE_IMAGE_DIR = Path("/data/genimage/")
 D3_IMAGE_DIR = DATA_DIR / "d3" / "images"  # D3 images downloaded from HuggingFace
 # =============================================================================
 # MODEL CONFIGURATIONS

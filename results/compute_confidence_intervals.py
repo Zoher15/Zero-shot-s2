@@ -1,315 +1,304 @@
 """
-Confidence Interval Computation Script
+Compute 95% bootstrap confidence intervals for saved evaluation runs.
 
-Computes bootstrap confidence intervals for evaluation metrics from reasoning JSON files.
-Uses parallel processing with joblib for fast computation.
-
-Metrics computed:
-- Macro F1-score with 95% CI
-
-Output: confidence.json in the same directory as performance.json
-
-Usage:
-    1. Configure DATASETS, MODELS, PHRASES, MODES, N_VALUES at the top of the script
-    2. Run: python compute_confidence_intervals.py
-
-The script will process all combinations and skip existing confidence.json files.
+The script processes the default dataset/model/phrase/mode/n grid defined below
+and writes confidence_{timestamp}.json beside each run's latest reasoning file.
+Existing confidence files are skipped only when their metadata still matches the
+source reasoning file and fixed bootstrap settings.
 """
 
+from __future__ import annotations
+
+import argparse
+import itertools
 import json
 import multiprocessing as mp
-import numpy as np
-from typing import List, Dict, Any
-from tqdm import tqdm
-from joblib import Parallel, delayed
-
-# Add parent directory to path for imports
 import sys
 from pathlib import Path
+from typing import Any, Callable, Dict, List, Optional
+
+import numpy as np
+from joblib import Parallel, delayed
+from tqdm import tqdm
+
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
-# Import config and helpers
 import config
 import helpers
 
-# ============================================================================
-# CONFIGURATION
-# ============================================================================
 
-# Bootstrap parameters
 N_BOOTSTRAP = 10000
 CONFIDENCE_LEVEL = 0.95
 RANDOM_SEED = 0
-N_JOBS = -1  # Use all available CPUs
+N_JOBS = -1
 
-# Override flag (set via command line)
-OVERRIDE = False
+DATASETS = ["d3", "df40", "genimage"]
+MODELS = ["llava-onevision-7b", "qwen25-vl-7b", "qwen3-vl-8b"]
+PHRASES = ["baseline", "cot", "s2"]
+MODES = ["prefill", "prompt", "prefill-pseudo-system"]
+N_VALUES = [1]
 
-# Combinations to compute CIs for
-# Modify these lists to compute CIs for specific configurations
-DATASETS = ['d3', 'df40', 'genimage']  # Datasets to process
-MODELS = ['llava-onevision-7b', 'qwen25-vl-7b', 'qwen3-vl-8b']  # Models to process
-PHRASES = ['baseline', 'cot', 's2']  # Phrases to process
-MODES = ['prefill']  # Phrase modes to process
-N_VALUES = [1]  # n values to process
-
-# Note: Metric computation functions are now in helpers.py
-# We use helpers.compute_macro_f1_from_predictions()
+PredictionMetric = Callable[[List[str], List[str]], float]
 
 
-# ============================================================================
-# BOOTSTRAP FUNCTIONS
-# ============================================================================
+def is_base_reasoning_file(path: Path) -> bool:
+    """Return True for original reasoning files, excluding derived variants."""
+    return (
+        path.name.startswith("reasoning_")
+        and path.suffix == ".json"
+        and "_with_" not in path.stem
+    )
 
-def _bootstrap_iteration(predictions: List[str], ground_truth: List[str],
-                        metric_fn, seed: int) -> float:
-    """
-    Single bootstrap iteration: resample and compute metric.
 
-    Args:
-        predictions: List of predicted labels
-        ground_truth: List of ground truth labels
-        metric_fn: Metric computation function
-        seed: Random seed for this iteration
+def find_latest_reasoning_file(output_dir: Path) -> Optional[Path]:
+    """Find the latest base reasoning_*.json file in an output directory."""
+    reasoning_files = [
+        path for path in output_dir.glob("reasoning_*.json")
+        if is_base_reasoning_file(path)
+    ]
+    if not reasoning_files:
+        return None
+    return max(reasoning_files, key=lambda path: path.name)
 
-    Returns:
-        Metric value for this bootstrap sample
-    """
+
+def confidence_file_for_reasoning(reasoning_file: Path) -> Path:
+    """Build confidence_{timestamp}.json for a reasoning_{timestamp}.json file."""
+    prefix = "reasoning_"
+    if not reasoning_file.name.startswith(prefix):
+        raise ValueError(f"Unexpected reasoning filename: {reasoning_file.name}")
+
+    timestamp = reasoning_file.stem[len(prefix):]
+    return reasoning_file.with_name(f"confidence_{timestamp}.json")
+
+
+def load_reasoning_file(path: Path) -> List[Dict[str, Any]]:
+    """Load a reasoning JSON file and validate the fields needed for scoring."""
+    with path.open("r", encoding="utf-8") as handle:
+        data = json.load(handle)
+
+    if not isinstance(data, list):
+        raise ValueError(f"Expected a list in {path}, found {type(data).__name__}")
+    if not data:
+        raise ValueError(f"Reasoning file is empty: {path}")
+
+    required_keys = {"aggregated_prediction", "ground_truth"}
+    for index, result in enumerate(data):
+        missing = required_keys.difference(result)
+        if missing:
+            raise ValueError(f"{path} row {index} is missing keys: {sorted(missing)}")
+
+    return data
+
+
+def optional_float(value: Any) -> Optional[float]:
+    """Convert a JSON scalar to float when possible."""
+    try:
+        return float(value)
+    except (TypeError, ValueError):
+        return None
+
+
+def confidence_is_current(
+    confidence_file: Path,
+    reasoning_file: Path,
+    point_macro_f1: float,
+) -> bool:
+    """Check whether an existing confidence file matches the current inputs."""
+    if not confidence_file.exists():
+        return False
+
+    try:
+        with confidence_file.open("r", encoding="utf-8") as handle:
+            data = json.load(handle)
+    except (OSError, json.JSONDecodeError):
+        return False
+
+    metadata = data.get("metadata", {})
+    macro_f1 = data.get("macro_f1", {})
+    source = str(reasoning_file.relative_to(config.PROJECT_ROOT))
+
+    stored_point = optional_float(macro_f1.get("point"))
+    stored_confidence_level = optional_float(macro_f1.get("confidence_level"))
+
+    return (
+        metadata.get("reasoning_file") == source
+        and metadata.get("random_seed") == RANDOM_SEED
+        and macro_f1.get("n_bootstrap") == N_BOOTSTRAP
+        and stored_point is not None
+        and abs(stored_point - point_macro_f1) <= 1e-12
+        and stored_confidence_level is not None
+        and abs(stored_confidence_level - CONFIDENCE_LEVEL) <= 1e-12
+    )
+
+
+def _bootstrap_iteration(
+    predictions: List[str],
+    ground_truth: List[str],
+    metric_fn: PredictionMetric,
+    seed: int,
+) -> float:
+    """Run one bootstrap iteration: sample rows with replacement and score."""
     rng = np.random.RandomState(seed)
-    n_samples = len(predictions)
-
-    # Resample with replacement
-    indices = rng.choice(n_samples, size=n_samples, replace=True)
-
+    indices = rng.choice(len(predictions), size=len(predictions), replace=True)
     sample_preds = [predictions[i] for i in indices]
     sample_truth = [ground_truth[i] for i in indices]
-
     return metric_fn(sample_preds, sample_truth)
 
 
-def bootstrap_confidence_interval(predictions: List[str], ground_truth: List[str],
-                                  metric_fn, n_bootstrap: int = N_BOOTSTRAP,
-                                  confidence_level: float = CONFIDENCE_LEVEL,
-                                  random_seed: int = RANDOM_SEED,
-                                  n_jobs: int = N_JOBS) -> Dict[str, Any]:
-    """
-    Compute bootstrap confidence interval for a metric.
-
-    Args:
-        predictions: List of predicted labels
-        ground_truth: List of ground truth labels
-        metric_fn: Metric computation function
-        n_bootstrap: Number of bootstrap iterations
-        confidence_level: Confidence level (e.g., 0.95 for 95% CI)
-        random_seed: Random seed for reproducibility
-        n_jobs: Number of parallel jobs (-1 = all CPUs)
-
-    Returns:
-        Dictionary with point estimate and CI bounds
-    """
-    # Point estimate
+def bootstrap_confidence_interval(
+    predictions: List[str],
+    ground_truth: List[str],
+    metric_fn: PredictionMetric,
+) -> Dict[str, Any]:
+    """Compute a fixed 95% percentile bootstrap confidence interval."""
     point_estimate = metric_fn(predictions, ground_truth)
+    print(f"  Running {N_BOOTSTRAP} bootstrap iterations using {mp.cpu_count()} CPUs...")
 
-    # Bootstrap sampling in parallel
-    print(f"  Running {n_bootstrap} bootstrap iterations using {mp.cpu_count()} CPUs...")
-
-    bootstrap_scores = Parallel(n_jobs=n_jobs)(
-        delayed(_bootstrap_iteration)(predictions, ground_truth, metric_fn, random_seed + i)
-        for i in tqdm(range(n_bootstrap), desc="  Bootstrap", ncols=80)
+    bootstrap_scores = Parallel(n_jobs=N_JOBS)(
+        delayed(_bootstrap_iteration)(
+            predictions,
+            ground_truth,
+            metric_fn,
+            RANDOM_SEED + iteration,
+        )
+        for iteration in tqdm(range(N_BOOTSTRAP), desc="  Bootstrap", ncols=80)
     )
 
-    # Compute confidence interval
-    alpha = 1 - confidence_level
-    lower_percentile = (alpha / 2) * 100
-    upper_percentile = (1 - alpha / 2) * 100
-
-    ci_lower = np.percentile(bootstrap_scores, lower_percentile)
-    ci_upper = np.percentile(bootstrap_scores, upper_percentile)
+    alpha = 1 - CONFIDENCE_LEVEL
+    ci_lower = np.percentile(bootstrap_scores, (alpha / 2) * 100)
+    ci_upper = np.percentile(bootstrap_scores, (1 - alpha / 2) * 100)
 
     return {
-        'point': float(point_estimate),
-        'ci_95': [float(ci_lower), float(ci_upper)],
-        'n_bootstrap': n_bootstrap,
-        'confidence_level': confidence_level
+        "point": float(point_estimate),
+        "ci_95": [float(ci_lower), float(ci_upper)],
+        "n_bootstrap": N_BOOTSTRAP,
+        "confidence_level": CONFIDENCE_LEVEL,
     }
 
 
-# Note: Data loading functions are now in helpers.py
-# We use helpers.load_reasoning_json() and helpers.extract_predictions_and_truth()
-
-
-# ============================================================================
-# MAIN COMPUTATION
-# ============================================================================
-
-def compute_and_save_confidence_intervals(dataset: str, model: str, phrase: str,
-                                         mode: str = 'prefill', n: int = 1, override: bool = False):
-    """
-    Compute confidence intervals and save to confidence.json.
-
-    Args:
-        dataset: Dataset name
-        model: Model name
-        phrase: Phrase name
-        mode: Phrase mode (default: 'prefill')
-        n: Number of responses (default: 1)
-        override: Force recompute even if confidence.json exists (default: False)
-    """
+def compute_and_save_confidence_intervals(
+    dataset: str,
+    model: str,
+    phrase: str,
+    mode: str = "prefill",
+    n: int = 1,
+    override: bool = False,
+) -> str:
+    """Compute and save confidence intervals for one configuration."""
     output_dir = config.get_output_dir(dataset, model, phrase, mode, n)
-    confidence_file = output_dir / "confidence.json"
+    reasoning_file = find_latest_reasoning_file(output_dir)
 
-    # Skip if already exists (unless override)
-    if confidence_file.exists() and not override:
-        print(f"⚠️  Confidence intervals already exist at {confidence_file}")
-        print("   Skipping computation. Use --override flag to recompute.")
-        return
+    if reasoning_file is None:
+        return f"skipped missing reasoning file: {output_dir}"
 
-    print(f"\n📊 Computing confidence intervals for:")
-    print(f"   Dataset: {dataset}")
-    print(f"   Model: {model}")
-    print(f"   Phrase: {phrase}")
-    print(f"   Mode: {mode}")
-    print(f"   n: {n}")
-
-    # Load reasoning data
-    print("\n📁 Loading reasoning data...")
-    reasoning_data = helpers.load_reasoning_json(dataset, model, phrase, mode, n)
+    confidence_file = confidence_file_for_reasoning(reasoning_file)
+    reasoning_data = load_reasoning_file(reasoning_file)
     predictions, ground_truth = helpers.extract_predictions_and_truth(reasoning_data)
+    point_macro_f1 = helpers.compute_macro_f1_from_predictions(predictions, ground_truth)
 
-    print(f"   Loaded {len(predictions)} examples")
+    if not override and confidence_is_current(confidence_file, reasoning_file, point_macro_f1):
+        return f"skipped current {confidence_file.relative_to(config.PROJECT_ROOT)}"
 
-    # Compute bootstrap CI for macro F1
-    print("\n🔄 Computing bootstrap CI for Macro F1...")
+    print()
+    print(f"Computing 95% CI for {dataset}/{model}/{phrase}/{mode}/n={n}")
+    print(f"  Source reasoning: {reasoning_file.relative_to(config.PROJECT_ROOT)}")
+    print(f"  Loaded {len(predictions)} examples")
+
     macro_f1_ci = bootstrap_confidence_interval(
         predictions,
         ground_truth,
         helpers.compute_macro_f1_from_predictions,
-        n_bootstrap=N_BOOTSTRAP,
-        confidence_level=CONFIDENCE_LEVEL,
-        random_seed=RANDOM_SEED,
-        n_jobs=N_JOBS
     )
 
-    # Prepare output data
     confidence_data = {
-        'macro_f1': macro_f1_ci,
-        'metadata': {
-            'dataset': dataset,
-            'model': model,
-            'phrase': phrase,
-            'mode': mode,
-            'n_responses': n,
-            'n_examples': len(predictions)
-        }
+        "macro_f1": macro_f1_ci,
+        "metadata": {
+            "dataset": dataset,
+            "model": model,
+            "phrase": phrase,
+            "mode": mode,
+            "n_responses": n,
+            "n_examples": len(predictions),
+            "reasoning_file": str(reasoning_file.relative_to(config.PROJECT_ROOT)),
+            "random_seed": RANDOM_SEED,
+        },
     }
 
-    # Save to JSON
-    with open(confidence_file, 'w', encoding='utf-8') as f:
-        json.dump(confidence_data, f, indent=2)
+    with confidence_file.open("w", encoding="utf-8") as handle:
+        json.dump(confidence_data, handle, indent=2)
 
-    print(f"\n✅ Confidence intervals saved to: {confidence_file}")
-    print(f"\n📈 Results:")
-    print(f"   Macro F1: {macro_f1_ci['point']:.4f} [{macro_f1_ci['ci_95'][0]:.4f}, {macro_f1_ci['ci_95'][1]:.4f}]")
+    ci_lower, ci_upper = macro_f1_ci["ci_95"]
+    print(f"  Saved: {confidence_file.relative_to(config.PROJECT_ROOT)}")
+    print(f"  Macro F1: {macro_f1_ci['point']:.4f} [{ci_lower:.4f}, {ci_upper:.4f}]")
+    return f"processed {confidence_file.relative_to(config.PROJECT_ROOT)}"
 
 
-# ============================================================================
-# BATCH PROCESSING
-# ============================================================================
+def process_all_combinations(override: bool = False) -> None:
+    """Process every configured dataset/model/phrase/mode/n combination."""
+    combinations = [
+        (dataset, model, phrase, mode, n)
+        for dataset, model, phrase, mode, n in itertools.product(DATASETS, MODELS, PHRASES, MODES, N_VALUES)
+        if phrase != "baseline" or mode == MODES[0]
+    ]
 
-def process_all_combinations(override: bool = False):
-    """
-    Process all combinations specified in configuration.
-
-    Computes confidence intervals for all dataset/model/phrase/mode/n combinations.
-    Skips existing confidence.json files automatically unless override=True.
-
-    Args:
-        override: Force recompute even if confidence.json exists
-    """
-    import itertools
-
-    # Generate all combinations
-    combinations = list(itertools.product(DATASETS, MODELS, PHRASES, MODES, N_VALUES))
-    total = len(combinations)
-
-    print("=" * 80)
-    print("Bootstrap Confidence Interval Computation - Batch Mode")
-    print("=" * 80)
-    print(f"\n📋 Processing {total} combinations:")
-    print(f"   Datasets: {DATASETS}")
-    print(f"   Models: {MODELS}")
-    print(f"   Phrases: {PHRASES}")
-    print(f"   Modes: {MODES}")
-    print(f"   n values: {N_VALUES}")
+    print("Bootstrap Confidence Interval Computation")
+    print(f"Datasets: {DATASETS}")
+    print(f"Models: {MODELS}")
+    print(f"Phrases: {PHRASES}")
+    print(f"Modes: {MODES}")
+    print(f"n values: {N_VALUES}")
+    print(f"Confidence level: {CONFIDENCE_LEVEL}")
+    print(f"Random seed: {RANDOM_SEED}")
+    print(f"Combinations: {len(combinations)}")
     if override:
-        print(f"   Override: ✅ Will recompute existing files")
+        print("Override: existing confidence files will be recomputed")
     print()
 
-    # Track statistics
     processed = 0
     skipped = 0
     errors = 0
 
-    # Process each combination
-    for idx, (dataset, model, phrase, mode, n) in enumerate(combinations, 1):
-        print("=" * 80)
-        print(f"[{idx}/{total}] Processing: {dataset} / {model} / {phrase} / {mode} / n={n}")
-        print("=" * 80)
-
+    for index, (dataset, model, phrase, mode, n) in enumerate(combinations, 1):
+        label = f"[{index}/{len(combinations)}] {dataset}/{model}/{phrase}/{mode}/n={n}"
         try:
-            # Check if already exists (unless override)
-            output_dir = config.get_output_dir(dataset, model, phrase, mode, n)
-            confidence_file = output_dir / "confidence.json"
-
-            if confidence_file.exists() and not override:
-                print(f"⏭️  Skipping - confidence.json already exists (use --override to recompute)")
-                skipped += 1
-                continue
-
-            # Check if performance/reasoning files exist
-            reasoning_files = sorted(output_dir.glob("reasoning_*.json"))
-            if not reasoning_files:
-                print(f"⚠️  Skipping - no reasoning.json found in {output_dir}")
-                skipped += 1
-                continue
-
-            # Compute CI
-            compute_and_save_confidence_intervals(dataset, model, phrase, mode, n, override=override)
-            processed += 1
-
-        except Exception as e:
-            print(f"❌ Error processing combination: {e}")
+            status = compute_and_save_confidence_intervals(
+                dataset,
+                model,
+                phrase,
+                mode,
+                n,
+                override=override,
+            )
+        except Exception as exc:
+            print(f"{label}: error: {exc}")
             errors += 1
+            continue
 
-        print()
+        print(f"{label}: {status}")
+        if status.startswith("processed"):
+            processed += 1
+        else:
+            skipped += 1
 
-    # Summary
-    print("=" * 80)
-    print("📊 Batch Processing Summary")
-    print("=" * 80)
-    print(f"Total combinations: {total}")
-    print(f"✅ Processed: {processed}")
-    print(f"⏭️  Skipped: {skipped}")
-    print(f"❌ Errors: {errors}")
-    print("=" * 80)
+    print()
+    print("Summary")
+    print(f"Processed: {processed}")
+    print(f"Skipped: {skipped}")
+    print(f"Errors: {errors}")
 
 
-def main():
-    """Main execution function."""
-    import argparse
-
+def main() -> None:
+    """CLI entry point."""
     parser = argparse.ArgumentParser(
-        description="Compute bootstrap confidence intervals for evaluation metrics",
-        formatter_class=argparse.RawDescriptionHelpFormatter
+        description="Compute fixed 95% bootstrap confidence intervals.",
+        formatter_class=argparse.ArgumentDefaultsHelpFormatter,
     )
     parser.add_argument(
-        '--override',
-        action='store_true',
-        help='Force recompute even if confidence.json already exists'
+        "--override",
+        action="store_true",
+        help="Recompute even when timestamped confidence metadata is current.",
     )
-
     args = parser.parse_args()
-
     process_all_combinations(override=args.override)
 
 

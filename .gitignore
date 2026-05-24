@@ -2,6 +2,7 @@ trash/
 .vscode/
 .claude/
 logs/
+rebuttal/
 output/
 __pycache__/
 results/cache/
